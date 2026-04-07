@@ -1,0 +1,32 @@
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# NuGet restore output
+packages/
+
+# Local environment and secrets
+/Web.config
+.codex_otp_session_cookie.txt
+
+# Local tooling and logs
+.vscode/
+Logs/
+Backup/
+iisexpress-err.log
+iisexpress-out.log
+
+# Database/runtime files
+App_Data/*.mdf
+App_Data/*.ldf
+App_Data/*.db
+
+# Upgrade artifacts
+UpgradeLog.htm

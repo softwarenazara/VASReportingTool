@@ -1,0 +1,68 @@
+﻿@model VASReportingTool.Models.OtpVerificationViewModel
+@{
+    Layout = null;
+    ViewBag.Title = "Verify OTP";
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Verify OTP</title>
+    <link rel="stylesheet" href="@Url.Content("~/Content/site.css?v=20260326-2")" />
+</head>
+<body>
+    <div class="auth-shell otp-shell">
+        <section class="auth-panel auth-panel-form auth-panel-form-wide">
+            <div class="auth-form-top">Step 2 of 2</div>
+            <h2>Verify your one-time password</h2>
+            <p class="muted">
+                Enter the 6 digit OTP for <strong>@Model.Username</strong>.
+                @if (!string.IsNullOrWhiteSpace(Model.MaskedEmail))
+                {
+                    <text>It was sent to <strong>@Model.MaskedEmail</strong>.</text>
+                }
+                else
+                {
+                    <text>It was sent to the registered email.</text>
+                }
+            </p>
+            @if (!string.IsNullOrWhiteSpace(Model.InfoMessage))
+            {
+                <div class="info-banner">@Model.InfoMessage</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+            {
+                <div class="error">@Model.ErrorMessage</div>
+            }
+            <form action="@Url.Content("~/Account/VerifyOtp")" method="post">
+                @Html.AntiForgeryToken()
+                @Html.HiddenFor(m => m.Username)
+                <div class="field">
+                    <label>OTP Code</label>
+                    @Html.TextBoxFor(m => m.OtpCode, new { placeholder = "Enter 6 digit OTP", maxlength = "6" })
+                </div>
+                <button class="primary-btn auth-submit" type="submit">Verify and Sign In</button>
+            </form>
+            <div class="auth-actions-row">
+                <form action="@Url.Content("~/Account/ResendOtp")" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="username" value="@Model.Username" />
+                    <button class="ghost-btn" type="submit">Resend OTP</button>
+                </form>
+                @if (Model.ResendCooldownSeconds > 0)
+                {
+                    <div class="muted">Resend cooldown: @Model.ResendCooldownSeconds seconds</div>
+                }
+            </div>
+        </section>
+    </div>
+</body>
+</html>
+
+
+
+

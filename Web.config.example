@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <appSettings>
+    <add key="webpages:Version" value="2.0.0.0" />
+    <add key="webpages:Enabled" value="false" />
+    <add key="ClientValidationEnabled" value="true" />
+    <add key="UnobtrusiveJavaScriptEnabled" value="true" />
+    <add key="OtpFromEmail" value="your-email@example.com" />
+    <add key="SmtpHost" value="smtp.example.com" />
+    <add key="SmtpPort" value="587" />
+    <add key="SmtpUsername" value="your-email@example.com" />
+    <add key="SmtpPassword" value="REPLACE_WITH_SMTP_PASSWORD" />
+    <add key="SmtpEnableSsl" value="true" />
+    <add key="OtpResendCooldownSeconds" value="60" />
+    <add key="GeoLocationApiUrl" value="https://api.ipinfo.io/lite/{0}?token={1}" />
+    <add key="GeoLocationApiToken" value="REPLACE_WITH_FREE_IPINFO_TOKEN" />
+    <add key="RegionCountryBackendOverrides" value="Africa|Ethiopia|http://example.com/VAS_Backend_API/api" />
+  </appSettings>
+  <connectionStrings>
+    <add name="ReportingDb" connectionString="Data Source=SERVER_NAME;Initial Catalog=VASReportingToolDb;User ID=YOUR_DB_USER;pwd=YOUR_DB_PASSWORD" providerName="System.Data.SqlClient" />
+  </connectionStrings>
+  <system.web>
+    <compilation debug="true" targetFramework="4.0" />
+    <customErrors mode="On" defaultRedirect="~/Error/Index">
+      <error statusCode="404" redirect="~/Error/NotFound" />
+    </customErrors>
+    <authentication mode="Forms"><forms loginUrl="~/Account/Login" timeout="30" slidingExpiration="true" /></authentication>
+    <authorization><allow users="*" /></authorization>
+    <httpRuntime targetFramework="4.0" />
+    <pages>
+      <namespaces>
+        <add namespace="System.Web.Helpers" />
+        <add namespace="System.Web.Mvc" />
+        <add namespace="System.Web.Mvc.Ajax" />
+        <add namespace="System.Web.Mvc.Html" />
+        <add namespace="System.Web.Routing" />
+        <add namespace="System.Web.WebPages" />
+      </namespaces>
+    </pages>
+    <sessionState timeout="30" />
+  </system.web>
+  <location path="Content"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="Scripts"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="fonts.googleapis.com"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="Account/Login"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="Account/VerifyOtp"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="Account/ResendOtp"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="Account/ForgotPassword"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="Account/ResetPassword"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="Error"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <location path="api/auth/login"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+  <system.webServer>
+    <validation validateIntegratedModeConfiguration="false" />
+    <defaultDocument enabled="true">
+      <files>
+        <remove value="Default.aspx" />
+        <add value="Default.aspx" />
+      </files>
+    </defaultDocument>
+    <handlers>
+      <remove name="ExtensionlessUrlHandler-Integrated-4.0" />
+      <remove name="OPTIONSVerbHandler" />
+      <remove name="TRACEVerbHandler" />
+      <add name="ExtensionlessUrlHandler-Integrated-4.0" path="*." verb="*" type="System.Web.Handlers.TransferRequestHandler" preCondition="integratedMode,runtimeVersionv4.0" />
+    </handlers>
+    <staticContent>
+      <remove fileExtension=".css" />
+      <mimeMap fileExtension=".css" mimeType="text/css" />
+      <remove fileExtension=".js" />
+      <mimeMap fileExtension=".js" mimeType="application/javascript" />
+    </staticContent>
+    <httpErrors errorMode="Custom" existingResponse="PassThrough">
+      <remove statusCode="404" subStatusCode="-1" />
+      <error statusCode="404" path="/Error/NotFound" responseMode="ExecuteURL" />
+      <remove statusCode="500" subStatusCode="-1" />
+      <error statusCode="500" path="/Error/Index" responseMode="ExecuteURL" />
+    </httpErrors>
+    <modules runAllManagedModulesForAllRequests="true" />
+  </system.webServer>
+</configuration>

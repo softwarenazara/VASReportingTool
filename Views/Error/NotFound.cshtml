@@ -1,0 +1,15 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Page not found";
+}
+<div class="error-shell">
+    <div class="error-card">
+        <div class="error-code">404</div>
+        <h1>That page does not exist</h1>
+        <p>The page may have moved, the route may be incorrect, or the session may have expired.</p>
+        <div class="btn-row">
+            <a class="primary-btn" href="@Url.Action("Index", "Dashboard")">Back to Dashboard</a>
+            <a class="ghost-btn" href="@Url.Action("Login", "Account")">Go to Login</a>
+        </div>
+    </div>
+</div>

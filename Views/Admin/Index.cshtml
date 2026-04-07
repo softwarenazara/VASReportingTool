@@ -1,0 +1,333 @@
+@model VASReportingTool.Models.AdminDashboardViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Admin";
+    var initialRegionId = Model.NewRegionUrl != null && Model.NewRegionUrl.RegionId > 0
+        ? Model.NewRegionUrl.RegionId
+        : (Model.Regions != null && Model.Regions.Count > 0 ? Model.Regions[0].RegionId : 0);
+    var regionLookup = Model.Regions == null
+        ? new Dictionary<int, string>()
+        : Model.Regions.ToDictionary(region => region.RegionId, region => region.Name);
+    var regionUrlLookup = Model.RegionUrls == null
+        ? new Dictionary<int, VASReportingTool.Models.RegionUrl>()
+        : Model.RegionUrls
+            .GroupBy(item => item.RegionId)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.Id).First());
+}
+<div class="container">
+    <div class="page-actions" style="margin-bottom:16px;">
+        <h1 class="section-title" style="margin-bottom:0;">Administration</h1>
+        <div class="btn-row">
+            <a class="ghost-btn" href="@Url.Action("Index", "Dashboard")">Go To Reports</a>
+        </div>
+    </div>
+    @if (TempData["AdminMessage"] != null)
+    {
+        <div class="notice-banner">@TempData["AdminMessage"]</div>
+    }
+    @Html.ValidationSummary(false, string.Empty, new { @class = "error" })
+    <div class="grid two" style="margin-bottom:16px;">
+        <div class="card">
+            <h2 class="section-title">Create User</h2>
+            @using (Html.BeginForm("CreateUser", "Admin", FormMethod.Post))
+            {
+                @Html.AntiForgeryToken()
+                <div class="field"><label>Username</label><input type="text" name="Username" value="@(Model.NewUser == null ? string.Empty : Model.NewUser.Username)" /></div>
+                <div class="field">
+                    <label>Email</label>
+                    <input type="email" name="Email" value="@(Model.NewUser == null ? string.Empty : Model.NewUser.Email)" />
+                    <div class="filter-hint">Each user must have a unique email address so OTP goes to the correct mailbox.</div>
+                </div>
+                <div class="field"><label>Password</label><input type="password" name="Password" /></div>
+                <div class="field"><label>Role</label>
+                    <select name="Role">
+                        <option value="User">User</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Region Access</label>
+                    @foreach (var region in Model.Regions)
+                    {
+                        <div><input type="checkbox" name="regionIds" value="@region.RegionId" /> @region.Name</div>
+                    }
+                </div>
+                <input type="hidden" name="IsActive" value="true" />
+                <button class="btn" type="submit">Create User</button>
+            }
+        </div>
+        <div class="card">
+            <h2 class="section-title" id="regionUrlFormTitle">Add Or Update Region URL</h2>
+            @using (Html.BeginForm("SaveRegionUrl", "Admin", FormMethod.Post, new { id = "regionUrlForm" }))
+            {
+                @Html.AntiForgeryToken()
+                <input type="hidden" id="regionUrlId" name="Id" value="@(Model.NewRegionUrl == null ? 0 : Model.NewRegionUrl.Id)" />
+                <input type="hidden" id="regionUrlIsActive" name="IsActive" value="@((Model.NewRegionUrl != null && !Model.NewRegionUrl.IsActive) ? "false" : "true")" />
+                <div class="field"><label>Region</label>
+                    <select id="regionUrlRegionId" name="RegionId">
+                        @foreach (var region in Model.Regions)
+                        {
+                            VASReportingTool.Models.RegionUrl existingRegionUrl;
+                            var hasExistingRegionUrl = regionUrlLookup.TryGetValue(region.RegionId, out existingRegionUrl);
+                            <option value="@region.RegionId"
+                                    @(initialRegionId == region.RegionId ? "selected=\"selected\"" : string.Empty)
+                                    data-region-name="@region.Name"
+                                    data-existing-id="@(hasExistingRegionUrl ? existingRegionUrl.Id.ToString() : string.Empty)"
+                                    data-existing-url="@(hasExistingRegionUrl ? existingRegionUrl.Url : string.Empty)"
+                                    data-existing-active="@(hasExistingRegionUrl && existingRegionUrl.IsActive ? "true" : "false")">@region.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>URL</label>
+                    <input type="text" id="regionUrlInput" name="Url" value="@(Model.NewRegionUrl == null ? string.Empty : Model.NewRegionUrl.Url)" />
+                    <div class="filter-hint" id="regionUrlModeHint">Selecting a region with an existing URL will load it for update instead of creating a duplicate entry.</div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn" type="submit"><span id="regionUrlSubmitText">Save URL</span></button>
+                    <button class="ghost-btn" id="regionUrlReset" type="button" style="display:none;">Reload Current</button>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="grid two" style="margin-bottom:16px;">
+        <div class="card">
+            <div class="page-actions">
+                <div>
+                    <h2 class="section-title">Manage Accounts</h2>
+                    <p class="muted">Update username, email, password, role, activation status, and region access from one place.</p>
+                </div>
+            </div>
+            <div class="admin-user-grid">
+                @foreach (var user in Model.EditableUsers)
+                {
+                    <details class="user-editor" @(Model.EditingUserId == user.UserId ? "open=\"open\"" : string.Empty)>
+                        <summary class="user-editor-summary">
+                            <div>
+                                <strong>@user.Username</strong>
+                                <div class="muted">@user.Email - @user.Role - @(user.IsActive ? "Active" : "Inactive")</div>
+                            </div>
+                            <span class="ghost-btn">Edit</span>
+                        </summary>
+                        @using (Html.BeginForm("SaveUser", "Admin", FormMethod.Post))
+                        {
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="UserId" value="@user.UserId" />
+                            <div class="grid two" style="margin-top:16px;">
+                                <div class="field"><label>Username</label><input type="text" name="Username" value="@user.Username" /></div>
+                                <div class="field"><label>Email</label><input type="email" name="Email" value="@user.Email" /></div>
+                                <div class="field"><label>Password</label><input type="password" name="Password" placeholder="Leave blank to keep current password" /></div>
+                                <div class="field">
+                                    <label>Role</label>
+                                    <select name="Role">
+                                        <option value="User" @(string.Equals(user.Role, "User", System.StringComparison.OrdinalIgnoreCase) ? "selected=\"selected\"" : string.Empty)>User</option>
+                                        <option value="Admin" @(string.Equals(user.Role, "Admin", System.StringComparison.OrdinalIgnoreCase) ? "selected=\"selected\"" : string.Empty)>Admin</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label>Region Access</label>
+                                <div class="inline-region-grid">
+                                    @foreach (var region in Model.Regions)
+                                    {
+                                        <label class="region-check">
+                                            <input type="checkbox" name="regionIds" value="@region.RegionId" @(user.RegionIds != null && user.RegionIds.Contains(region.RegionId) ? "checked=\"checked\"" : string.Empty) />
+                                            <span>@region.Name</span>
+                                        </label>
+                                    }
+                                </div>
+                            </div>
+                            <label class="region-check" style="margin-bottom:12px;">
+                                <input type="checkbox" name="IsActive" value="true" @(user.IsActive ? "checked=\"checked\"" : string.Empty) />
+                                <span>Account is active</span>
+                            </label>
+                            <div class="btn-row">
+                                <button class="btn" type="submit">Save Account</button>
+                            </div>
+                        }
+                    </details>
+                }
+            </div>
+        </div>
+        <div class="card">
+            <h2 class="section-title">Region URL Configuration</h2>
+            <p class="muted">Each region keeps a single backend URL. Use edit to update the configured endpoint.</p>
+            <table>
+                <thead><tr><th>Region</th><th>Region Id</th><th>URL</th><th>Active</th><th>Action</th></tr></thead>
+                <tbody>
+                    @foreach (var item in regionUrlLookup.Values.OrderBy(regionUrl => regionUrl.RegionId))
+                    {
+                        var regionName = regionLookup.ContainsKey(item.RegionId) ? regionLookup[item.RegionId] : ("Region " + item.RegionId);
+                        <tr>
+                            <td>@regionName</td>
+                            <td>@item.RegionId</td>
+                            <td>@item.Url</td>
+                            <td>@(item.IsActive ? "Yes" : "No")</td>
+                            <td>
+                                <button type="button"
+                                        class="ghost-btn js-edit-region-url"
+                                        data-region-url-id="@item.Id"
+                                        data-region-id="@item.RegionId"
+                                        data-region-name="@regionName"
+                                        data-url="@item.Url"
+                                        data-is-active="@(item.IsActive ? "true" : "false")">Edit</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="page-actions">
+            <div>
+                <h2 class="section-title">@(Model.IsArchiveMode ? "Activity Archive" : "Recent Activity Logs")</h2>
+                <p class="muted">
+                    @(Model.IsArchiveMode
+                        ? "Browse the full activity history with optional filters."
+                        : "Showing the latest activity captured in the last " + Model.ActivityWindowDays + " days.")
+                </p>
+            </div>
+            <div class="btn-row">
+                @if (Model.IsArchiveMode)
+                {
+                    <a class="ghost-btn" href="@Url.Action("Index", "Admin")">Back to Latest Logs</a>
+                }
+                else
+                {
+                    <a class="ghost-btn" href="@Url.Action("ActivityArchive", "Admin")">View Archive Logs</a>
+                }
+            </div>
+        </div>
+        @if (Model.IsArchiveMode)
+        {
+            using (Html.BeginForm("ActivityArchive", "Admin", FormMethod.Get))
+            {
+                <div class="grid two" style="margin-bottom:16px;">
+                    <div class="field"><label>User</label><input type="text" name="username" value="@(Model.ActivityFilter == null ? string.Empty : Model.ActivityFilter.Username)" /></div>
+                    <div class="field"><label>Action</label><input type="text" name="actionName" value="@(Model.ActivityFilter == null ? string.Empty : Model.ActivityFilter.ActionName)" /></div>
+                    <div class="field"><label>IP Address</label><input type="text" name="ipAddress" value="@(Model.ActivityFilter == null ? string.Empty : Model.ActivityFilter.IpAddress)" /></div>
+                    <div class="field"><label>From UTC</label><input type="datetime-local" name="fromUtc" value="@(Model.ActivityFilter != null && Model.ActivityFilter.FromUtc.HasValue ? Model.ActivityFilter.FromUtc.Value.ToString("yyyy-MM-ddTHH:mm") : string.Empty)" /></div>
+                    <div class="field"><label>To UTC</label><input type="datetime-local" name="toUtc" value="@(Model.ActivityFilter != null && Model.ActivityFilter.ToUtc.HasValue ? Model.ActivityFilter.ToUtc.Value.ToString("yyyy-MM-ddTHH:mm") : string.Empty)" /></div>
+                </div>
+                <div class="btn-row" style="margin-bottom:16px;">
+                    <button class="btn" type="submit">Apply Filters</button>
+                    <a class="ghost-btn" href="@Url.Action("ActivityArchive", "Admin")">Clear Filters</a>
+                </div>
+            }
+        }
+        <table>
+            <thead><tr><th>UTC Time</th><th>User</th><th>Action</th><th>IP</th><th>Location</th><th>Session</th><th>Details</th></tr></thead>
+            <tbody>
+                @foreach (var item in Model.RecentActivities)
+                {
+                    <tr>
+                        <td>@item.CreatedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@item.Username</td>
+                        <td>@item.ActionName</td>
+                        <td>@item.IpAddress</td>
+                        <td>@item.LocationText</td>
+                        <td>@item.SessionKey</td>
+                        <td>@item.Details</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+<script>
+    (function () {
+        var form = document.getElementById("regionUrlForm");
+        var regionSelect = document.getElementById("regionUrlRegionId");
+        var idInput = document.getElementById("regionUrlId");
+        var activeInput = document.getElementById("regionUrlIsActive");
+        var urlInput = document.getElementById("regionUrlInput");
+        var title = document.getElementById("regionUrlFormTitle");
+        var submitText = document.getElementById("regionUrlSubmitText");
+        var hint = document.getElementById("regionUrlModeHint");
+        var resetButton = document.getElementById("regionUrlReset");
+
+        if (!form || !regionSelect || !idInput || !activeInput || !urlInput || !title || !submitText || !hint || !resetButton) {
+            return;
+        }
+
+        function getSelectedOption() {
+            return regionSelect.options[regionSelect.selectedIndex] || null;
+        }
+
+        function setRegionUrlMode(overrideUrlValue) {
+            var option = getSelectedOption();
+            var existingId;
+            var existingUrl;
+            var existingActive;
+            var regionName;
+            var isEditing;
+
+            if (!option) {
+                return;
+            }
+
+            existingId = option.getAttribute("data-existing-id") || "";
+            existingUrl = option.getAttribute("data-existing-url") || "";
+            existingActive = option.getAttribute("data-existing-active") || "true";
+            regionName = option.getAttribute("data-region-name") || "selected region";
+            isEditing = !!existingId;
+
+            idInput.value = existingId;
+            activeInput.value = isEditing ? existingActive : "true";
+
+            if (overrideUrlValue) {
+                urlInput.value = existingUrl;
+            }
+
+            title.textContent = isEditing ? "Update Region URL" : "Add Region URL";
+            submitText.textContent = isEditing ? "Update URL" : "Save URL";
+            hint.textContent = isEditing
+                ? "A URL already exists for " + regionName + ". Updating here will replace the current entry."
+                : "No URL is configured for " + regionName + " yet. Saving will create one.";
+            resetButton.style.display = isEditing ? "" : "none";
+        }
+
+        regionSelect.addEventListener("change", function () {
+            setRegionUrlMode(true);
+        });
+
+        resetButton.addEventListener("click", function () {
+            setRegionUrlMode(true);
+            urlInput.focus();
+        });
+
+        Array.prototype.forEach.call(document.querySelectorAll(".js-edit-region-url"), function (button) {
+            button.addEventListener("click", function () {
+                var regionId = button.getAttribute("data-region-id") || "";
+                var regionName = button.getAttribute("data-region-name") || "selected region";
+
+                if (regionId) {
+                    regionSelect.value = regionId;
+                }
+
+                setRegionUrlMode(false);
+                idInput.value = button.getAttribute("data-region-url-id") || "";
+                activeInput.value = button.getAttribute("data-is-active") || "true";
+                urlInput.value = button.getAttribute("data-url") || "";
+                title.textContent = "Update Region URL";
+                submitText.textContent = "Update URL";
+                hint.textContent = "Editing the configured URL for " + regionName + ".";
+
+                if (form.scrollIntoView) {
+                    form.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+
+                urlInput.focus();
+            });
+        });
+
+        if ((urlInput.value || "").replace(/\s+/g, "").length > 0) {
+            setRegionUrlMode(false);
+        } else {
+            setRegionUrlMode(true);
+        }
+    })();
+</script>

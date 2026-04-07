@@ -1,0 +1,185 @@
+@model VASReportingTool.Models.DashboardViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "VAS Command Center";
+    var defaultRegionId = Model.Regions != null && Model.Regions.Count > 0 ? Model.Regions[0].RegionId : 0;
+    var dashboardScriptVersion = System.IO.File.GetLastWriteTimeUtc(Server.MapPath("~/Scripts/dashboard.js")).Ticks.ToString();
+}
+<div class="dashboard-app"
+     data-is-admin="@Model.IsAdmin.ToString().ToLowerInvariant()"
+     data-username="@Model.Username"
+     data-role="@Model.Role"
+     data-default-region-id="@defaultRegionId"
+     data-reporting-url="@Url.Content("~/api/reporting")"
+     data-countries-url="@Url.Content("~/api/regions/countries")"
+     data-operators-url="@Url.Content("~/api/regions/operators")"
+     data-services-url="@Url.Content("~/api/regions/services")">
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle filters">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+
+    <aside class="dashboard-sidebar" id="dashboardSidebar">
+        <button class="sidebar-close" id="sidebarClose" type="button" aria-label="Close filters">x</button>
+
+        <div class="brand-block">
+            <div class="brand-mark">VC</div>
+            <div>
+                <div class="brand-title">VAS Command Center</div>
+                <div class="brand-subtitle">Daily Reporting</div>
+            </div>
+        </div>
+
+        <div class="filter-block">
+            <div class="filter-label">Region</div>
+            <div class="region-chips" id="regionChips">
+                @foreach (var region in Model.Regions)
+                {
+                    <button type="button"
+                            class="region-chip @(region.RegionId == defaultRegionId ? "active" : string.Empty)"
+                            data-region-id="@region.RegionId">@region.Name</button>
+                }
+            </div>
+            <div class="filter-hint">Choose a region to load operators, services, charts, and tables.</div>
+        </div>
+
+        <div class="filter-block">
+            <label class="filter-label" for="countryName">Country</label>
+            <select class="filter-select" id="countryName">
+                <option value="">All countries</option>
+            </select>
+            <div class="filter-hint">Loaded for the selected region before operators.</div>
+        </div>
+
+        <div class="filter-block">
+            <label class="filter-label" for="operatorName">Operator</label>
+            <select class="filter-select" id="operatorName">
+                <option value="">All operators</option>
+            </select>
+            <div class="filter-hint">Loaded from the secured backend.</div>
+        </div>
+
+        <div class="filter-block">
+            <label class="filter-label" for="serviceName">Service</label>
+            <select class="filter-select" id="serviceName">
+                <option value="">All services</option>
+            </select>
+            <div class="filter-hint">Based on the selected region and operator.</div>
+        </div>
+
+        <div class="filter-block">
+            <label class="filter-label" for="fromDate">From Date</label>
+            <input class="filter-input" id="fromDate" type="date" />
+        </div>
+
+        <div class="filter-block">
+            <label class="filter-label" for="toDate">To Date</label>
+            <input class="filter-input" id="toDate" type="date" />
+        </div>
+
+        <button class="primary-btn filter-submit" id="applyFilters" type="button">Load Report</button>
+
+        <div class="sidebar-footer">
+            Signed in as <strong>@Model.Username</strong><br />
+            Role: @Model.Role
+        </div>
+    </aside>
+
+    <main class="dashboard-main">
+        <section class="hero-bar">
+            <div>
+                <h1 class="hero-title" id="dashTitle">VAS Daily Report</h1>
+                <div class="hero-meta" id="dashMeta">Region -> Country -> Operator -> Service -> Date Range</div>
+            </div>
+            <div class="hero-actions">
+                <div class="tabs hidden" id="currencyTabs">
+                    <button class="tab cur-tab on" type="button" data-currency="local">Local</button>
+                    <button class="tab cur-tab" type="button" data-currency="USD">USD $</button>
+                    <button class="tab cur-tab" type="button" data-currency="INR">INR ₹</button>
+                </div>
+                <div class="tabs" id="viewTabs">
+                    <button class="tab on" type="button" data-view="daily">Daily</button>
+                    <button class="tab" type="button" data-view="weekly">Weekly</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="rate-info hidden" id="rateInfo">
+            <div class="rate-info-header" id="rateInfoHeader"></div>
+            <div class="rate-info-body" id="rateInfoBody"></div>
+        </section>
+
+        <div class="dashboard-error hidden" id="dashboardError"></div>
+
+        <section class="dashboard-empty" id="dashboardEmpty">
+            <div class="empty-icon">Analytics</div>
+            <h2>Ready to load your report</h2>
+            <p>Choose a region, country, operator, service, and date range to load KPIs, charts, and detailed tables.</p>
+        </section>
+
+        <section class="dashboard-content hidden" id="dashboardContent">
+            <div class="kpi-grid" id="kpiGrid"></div>
+
+            <div class="insight-grid single">
+                <article class="insight-card" id="periodComparisonCard"></article>
+            </div>
+
+            <div class="anomalies" id="anomStrip"></div>
+
+            <div class="ch-grid" id="chartArea"></div>
+
+            <article class="tbl-card" id="tblDaily">
+                <div class="tbl-hdr">
+                    <div>
+                        <div class="tbl-title" id="tblTitle">Detailed Breakdown</div>
+                        <div class="muted" id="tableSummary">Aggregated daily or weekly records from the secured reporting API layer.</div>
+                    </div>
+                    <div class="tbl-ctrls">
+                        <input id="tableSearch" class="tbl-search" type="text" placeholder="Search records" />
+                        <button class="btn-csv" id="exportCsv" type="button">Export CSV</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="report-table">
+                        <thead id="tHead"></thead>
+                        <tbody id="reportBody"></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="tbl-card hidden" id="tblComparison">
+                <div class="tbl-hdr">
+                    <div>
+                        <div class="tbl-title">Service Comparison - Period Totals</div>
+                        <div class="muted">Compare the selected services, operators, and countries for the active report range.</div>
+                    </div>
+                    <div class="tbl-ctrls">
+                        <button class="btn-csv" id="exportComparisonCsv" type="button">Export CSV</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="report-table">
+                        <thead id="cmpHead"></thead>
+                        <tbody id="cmpBody"></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+    </main>
+</div>
+
+<div class="dashboard-loader hidden" id="dashboardLoader">
+    <div class="loader-ring"></div>
+    <div class="loader-text">Loading report data...</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+    if (!window.Chart) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"><\/script>');
+    }
+</script>
+<script src="@Url.Content("~/Scripts/dashboard.js?v=" + dashboardScriptVersion)"></script>

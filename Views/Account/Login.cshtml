@@ -1,0 +1,129 @@
+﻿@model VASReportingTool.Models.LoginViewModel
+@{
+    Layout = null;
+    ViewBag.Title = "Login";
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Login</title>
+    <link rel="stylesheet" href="@Url.Content("~/Content/site.css?v=20260326-2")" />
+</head>
+<body>
+    <div class="auth-shell">
+        <section class="auth-panel auth-panel-brand">
+            <div class="auth-brand-mark">VC</div>
+            <div class="auth-kicker">Secure Reporting Workspace</div>
+            <h1>VAS Command Center</h1>
+            <p>Google Looker-inspired reporting with secure access, OTP verification, region restrictions, activity logging, and admin controls.</p>
+            <div class="auth-feature-list">
+                <div class="auth-feature-item"><strong>Secure login</strong><span>Username, password, and email OTP in two steps.</span></div>
+                <div class="auth-feature-item"><strong>Region-aware access</strong><span>Users only see the markets assigned to them.</span></div>
+                <div class="auth-feature-item"><strong>Tracked sessions</strong><span>IP, location, and activity are captured from login to logout.</span></div>
+            </div>
+        </section>
+        <section class="auth-panel auth-panel-form">
+            <div class="auth-form-top">Step 1 of 2</div>
+            <h2>Sign in to continue</h2>
+            <p class="muted">Enter your username and password to receive a one-time code on your registered email address.</p>
+            @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+            {
+                <div class="error">@Model.ErrorMessage</div>
+            }
+            <form id="loginForm" action="@Url.Content("~/Account/Login")" method="post">
+                @Html.AntiForgeryToken()
+                <div class="field"><label>Username</label>@Html.TextBoxFor(m => m.Username, new { placeholder = "Enter username" })</div>
+                <div class="field"><label>Password</label>@Html.PasswordFor(m => m.Password, new { placeholder = "Enter password" })</div>
+                <button id="sendOtpBtn"
+                        class="primary-btn auth-submit"
+                        type="submit"
+                        data-default-text="Send OTP"
+                        data-loading-text="Sending OTP...">
+                    <span class="auth-submit-spinner" aria-hidden="true"></span>
+                    <span class="auth-submit-text">Send OTP</span>
+                </button>
+            </form>
+            <div class="auth-links">
+                <a href="@Url.Action("ForgotPassword", "Account")">Forgot password?</a>
+            </div>
+        </section>
+    </div>
+    <script>
+        (function () {
+            var loginForm = document.getElementById('loginForm');
+            var sendOtpBtn = document.getElementById('sendOtpBtn');
+
+            if (!loginForm || !sendOtpBtn) {
+                return;
+            }
+
+            var usernameInput = document.querySelector('[name="Username"]');
+            var passwordInput = document.querySelector('[name="Password"]');
+            var sendOtpText = sendOtpBtn.querySelector('.auth-submit-text');
+            var defaultText = sendOtpBtn.getAttribute('data-default-text') || 'Send OTP';
+            var loadingText = sendOtpBtn.getAttribute('data-loading-text') || 'Sending OTP...';
+            var hasSubmitted = false;
+
+            function setLoadingState(isLoading) {
+                sendOtpBtn.classList.toggle('is-loading', isLoading);
+                sendOtpBtn.disabled = isLoading;
+                sendOtpBtn.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+
+                if (sendOtpText) {
+                    sendOtpText.textContent = isLoading ? loadingText : defaultText;
+                }
+            }
+
+            function scheduleSubmit(callback) {
+                if (window.requestAnimationFrame) {
+                    window.requestAnimationFrame(function () {
+                        window.requestAnimationFrame(callback);
+                    });
+                    return;
+                }
+
+                window.setTimeout(callback, 60);
+            }
+
+            loginForm.addEventListener('submit', function (event) {
+                var username = usernameInput ? usernameInput.value.trim() : '';
+                var password = passwordInput ? passwordInput.value.trim() : '';
+
+                if (!username || !password) {
+                    setLoadingState(false);
+                    return; // let server-side validation show errors
+                }
+
+                if (hasSubmitted) {
+                    event.preventDefault();
+                    return;
+                }
+
+                event.preventDefault();
+                hasSubmitted = true;
+                setLoadingState(true);
+
+                scheduleSubmit(function () {
+                    loginForm.submit();
+                });
+            });
+
+            window.addEventListener('pageshow', function (event) {
+                if (!event.persisted) {
+                    return;
+                }
+
+                hasSubmitted = false;
+                setLoadingState(false);
+            });
+        })();
+    </script>
+</body>
+</html>
+
+

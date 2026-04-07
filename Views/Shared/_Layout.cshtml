@@ -1,0 +1,44 @@
+@{
+    var siteCssVersion = System.IO.File.GetLastWriteTimeUtc(Server.MapPath("~/Content/site.css")).Ticks.ToString();
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewBag.Title</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="@Url.Content("~/Content/site.css?v=" + siteCssVersion)" />
+</head>
+<body>
+    <div class="layout-shell">
+        @if (Request.IsAuthenticated)
+        {
+            <header class="topbar">
+                <div class="topbar-brand-wrap">
+                    <div class="topbar-mark">VC</div>
+                    <div>
+                        <div class="topbar-brand">VAS Reporting Tool</div>
+                        <div class="topbar-sub">Secure region-wise reporting</div>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <a class="ghost-btn" href="@Url.Action("Index", "Dashboard")">Reports</a>
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <a class="ghost-btn" href="@Url.Action("Index", "Admin")">Admin</a>
+                    }
+                    @using (Html.BeginForm("Logout", "Account", FormMethod.Post))
+                    {
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="primary-btn">Logout</button>
+                    }
+                </div>
+            </header>
+        }
+        @RenderBody()
+    </div>
+</body>
+</html>

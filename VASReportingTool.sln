@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.35116.124
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{E24C65DC-7377-472B-9ABA-BC803B73C61A}") = "VASReportingTool", "VASReportingTool.csproj", "{C7D4A4A2-C6B6-4494-8ED3-E0F15357C6C2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C7D4A4A2-C6B6-4494-8ED3-E0F15357C6C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7D4A4A2-C6B6-4494-8ED3-E0F15357C6C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7D4A4A2-C6B6-4494-8ED3-E0F15357C6C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7D4A4A2-C6B6-4494-8ED3-E0F15357C6C2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {A648E0B8-FE47-467D-A9E9-98BFBA5F004C}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,15 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Something went wrong";
+}
+<div class="error-shell">
+    <div class="error-card">
+        <div class="error-code">500</div>
+        <h1>We hit an unexpected problem</h1>
+        <p>The request could not be completed right now. Please try again in a moment, or return to the dashboard and retry your action.</p>
+        <div class="btn-row">
+            <a class="primary-btn" href="@Url.Action("Index", "Dashboard")">Back to Dashboard</a>
+            <a class="ghost-btn" href="@Url.Action("Login", "Account")">Go to Login</a>
+        </div>
+    </div>
+</div>
