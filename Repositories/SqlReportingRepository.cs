@@ -203,34 +203,39 @@ namespace VASReportingTool.Repositories
         public IList<string> GetOperators(int userId, int regionId, string country, bool isAdmin)
         {
             var regionUrls = GetAccessibleRegionUrls(userId, regionId, isAdmin);
-            var filterTargets = GetCountryOverrideTargets(regionUrls, country);
-            if (filterTargets.Count == 0)
-            {
-                filterTargets = regionUrls;
-            }
+            var regionName = GetPrimaryRegionName(regionUrls);
 
             try
             {
-                return GetDistinctFilterValues(
-                    regionId,
-                    filterTargets,
-                    "operators",
-                    regionUrl => BuildRegionApiUrl(regionUrl.Url, "filters/operators"),
-                    entry =>
+                if (string.IsNullOrWhiteSpace(country))
+                {
+                    return GetCountryScopedFilterValues(
+                        regionId,
+                        regionUrls,
+                        country,
+                        "operators",
+                        regionUrl => BuildRegionApiUrl(regionUrl.Url, "filters/operators"),
+                        value => ReadString(value, "operator", "Operator"),
+                        null);
+                }
+
+                var values = new List<string>();
+                foreach (var requestedCountry in GetRequestedCountryValues(regionName, country))
+                {
+                    foreach (var item in GetCountryScopedFilterValues(
+                        regionId,
+                        regionUrls,
+                        requestedCountry,
+                        "operators",
+                        regionUrl => BuildRegionApiUrl(regionUrl.Url, "filters/operators"),
+                        value => ReadString(value, "operator", "Operator"),
+                        null))
                     {
-                        var value = entry as IDictionary<string, object>;
-                        if (value == null)
-                        {
-                            return string.IsNullOrWhiteSpace(country) ? Convert.ToString(entry) : string.Empty;
-                        }
+                        AddDistinctText(values, item);
+                    }
+                }
 
-                        if (!string.IsNullOrWhiteSpace(country) && !MatchesTextFilter(ReadString(value, "country", "Country"), country))
-                        {
-                            return string.Empty;
-                        }
-
-                        return ReadString(value, "operator", "Operator");
-                    });
+                return values.OrderBy(value => value).ToList();
             }
             catch (Exception ex)
             {
@@ -254,39 +259,39 @@ namespace VASReportingTool.Repositories
         public IList<string> GetServices(int userId, int regionId, string country, string operatorName, bool isAdmin)
         {
             var regionUrls = GetAccessibleRegionUrls(userId, regionId, isAdmin);
-            var filterTargets = GetCountryOverrideTargets(regionUrls, country);
-            if (filterTargets.Count == 0)
-            {
-                filterTargets = regionUrls;
-            }
+            var regionName = GetPrimaryRegionName(regionUrls);
 
             try
             {
-                return GetDistinctFilterValues(
-                    regionId,
-                    filterTargets,
-                    "services",
-                    regionUrl => BuildRegionApiUrl(regionUrl.Url, "filters/services?operatorName=" + Uri.EscapeDataString(operatorName ?? string.Empty)),
-                    entry =>
+                if (string.IsNullOrWhiteSpace(country))
+                {
+                    return GetCountryScopedFilterValues(
+                        regionId,
+                        regionUrls,
+                        country,
+                        "services",
+                        regionUrl => BuildRegionApiUrl(regionUrl.Url, "filters/services?operatorName=" + Uri.EscapeDataString(operatorName ?? string.Empty)),
+                        value => ReadString(value, "service", "Service"),
+                        operatorName);
+                }
+
+                var values = new List<string>();
+                foreach (var requestedCountry in GetRequestedCountryValues(regionName, country))
+                {
+                    foreach (var item in GetCountryScopedFilterValues(
+                        regionId,
+                        regionUrls,
+                        requestedCountry,
+                        "services",
+                        regionUrl => BuildRegionApiUrl(regionUrl.Url, "filters/services?operatorName=" + Uri.EscapeDataString(operatorName ?? string.Empty)),
+                        value => ReadString(value, "service", "Service"),
+                        operatorName))
                     {
-                        var value = entry as IDictionary<string, object>;
-                        if (value == null)
-                        {
-                            return string.IsNullOrWhiteSpace(country) ? Convert.ToString(entry) : string.Empty;
-                        }
+                        AddDistinctText(values, item);
+                    }
+                }
 
-                        if (!string.IsNullOrWhiteSpace(country) && !MatchesTextFilter(ReadString(value, "country", "Country"), country))
-                        {
-                            return string.Empty;
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(operatorName) && !MatchesTextFilter(ReadString(value, "operator", "Operator"), operatorName))
-                        {
-                            return string.Empty;
-                        }
-
-                        return ReadString(value, "service", "Service");
-                    });
+                return values.OrderBy(value => value).ToList();
             }
             catch (Exception ex)
             {
@@ -416,35 +421,35 @@ namespace VASReportingTool.Repositories
             request = request ?? new DashboardRequest();
             var rows = new List<ReportRow>();
             var regionUrls = GetAccessibleRegionUrls(userId, request.RegionId, isAdmin);
-            var overrideTargets = GetCountryOverrideTargets(regionUrls, request.Country);
-            var primaryTargets = regionUrls;
-            if (!string.IsNullOrWhiteSpace(request.Country) && overrideTargets.Count > 0)
+            if (string.IsNullOrWhiteSpace(request.Country))
             {
-                primaryTargets = primaryTargets
-                    .Where(regionUrl => !overrideTargets.Any(overrideTarget =>
-                        overrideTarget.RegionId == regionUrl.RegionId &&
-                        MatchesTextFilter(overrideTarget.OverrideCountry, request.Country)))
-                    .ToList();
-            }
+                var overrideTargets = GetCountryOverrideTargets(regionUrls, null);
 
-            if (primaryTargets.Count > 0)
-            {
-                rows.AddRange(FetchReportRows(primaryTargets, request, true).Rows);
-            }
-
-            if (overrideTargets.Count > 0)
-            {
-                var overrideResult = FetchReportRows(overrideTargets, request, !string.IsNullOrWhiteSpace(request.Country));
-                if (overrideResult.HasSuccessfulResponse)
+                if (regionUrls.Count > 0)
                 {
-                    rows = ExcludeReportRows(rows, overrideTargets).ToList();
-                    rows.AddRange(overrideResult.Rows);
+                    rows.AddRange(FetchReportRows(regionUrls, request, true).Rows);
+                }
+
+                if (overrideTargets.Count > 0)
+                {
+                    var overrideResult = FetchReportRows(overrideTargets, request, false);
+                    if (overrideResult.HasSuccessfulResponse)
+                    {
+                        rows = ExcludeReportRows(rows, overrideTargets).ToList();
+                        rows.AddRange(overrideResult.Rows);
+                    }
                 }
             }
+            else
+            {
+                rows.AddRange(GetCountryScopedReportRows(regionUrls, request));
+            }
+
+            rows = NormalizeReportCountries(rows).ToList();
 
             return rows
                 .Where(row =>
-                    MatchesTextFilter(row.Country, request.Country) &&
+                    MatchesCountryFilter(row.RegionName, row.Country, request.Country) &&
                     MatchesTextFilter(row.OperatorName, request.OperatorName) &&
                     MatchesTextFilter(row.ServiceName, request.ServiceName))
                 .OrderByDescending(x => x.ReportDate)
@@ -459,6 +464,70 @@ namespace VASReportingTool.Repositories
                 operationLabel,
                 requestUrlFactory,
                 valueSelector);
+        }
+
+        private IList<string> GetCountryScopedFilterValues(int regionId, IList<RegionApiTarget> regionUrls, string country, string operationLabel, Func<RegionApiTarget, string> requestUrlFactory, Func<IDictionary<string, object>, string> valueSelector, string operatorName)
+        {
+            var filterTargets = GetCountryOverrideTargets(regionUrls, country);
+            if (filterTargets.Count == 0)
+            {
+                filterTargets = regionUrls;
+            }
+
+            return GetDistinctFilterValues(
+                regionId,
+                filterTargets,
+                operationLabel,
+                requestUrlFactory,
+                entry =>
+                {
+                    var value = entry as IDictionary<string, object>;
+                    if (value == null)
+                    {
+                        return string.IsNullOrWhiteSpace(country) ? Convert.ToString(entry) : string.Empty;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(country) && !MatchesTextFilter(ReadString(value, "country", "Country"), country))
+                    {
+                        return string.Empty;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(operatorName) && !MatchesTextFilter(ReadString(value, "operator", "Operator"), operatorName))
+                    {
+                        return string.Empty;
+                    }
+
+                    return valueSelector(value);
+                });
+        }
+
+        private IList<ReportRow> GetCountryScopedReportRows(IList<RegionApiTarget> regionUrls, DashboardRequest request)
+        {
+            var rows = new List<ReportRow>();
+            var regionName = GetPrimaryRegionName(regionUrls);
+
+            foreach (var requestedCountry in GetRequestedCountryValues(regionName, request.Country))
+            {
+                var filterTargets = GetCountryOverrideTargets(regionUrls, requestedCountry);
+                if (filterTargets.Count == 0)
+                {
+                    filterTargets = regionUrls;
+                }
+
+                if (filterTargets.Count == 0)
+                {
+                    continue;
+                }
+
+                var countryRequest = CloneDashboardRequest(request);
+                countryRequest.Country = requestedCountry;
+                rows.AddRange(
+                    FetchReportRows(filterTargets, countryRequest, true)
+                        .Rows
+                        .Where(row => MatchesTextFilter(row.Country, requestedCountry)));
+            }
+
+            return rows;
         }
 
         private IList<string> GetDistinctFilterValues(int regionId, IList<RegionApiTarget> regionUrls, string operationLabel, Func<RegionApiTarget, string> requestUrlFactory, Func<object, string> valueSelector)
@@ -509,13 +578,120 @@ namespace VASReportingTool.Repositories
 
         private IList<string> ApplyCountryOverrides(IList<RegionApiTarget> regionUrls, IList<string> countries)
         {
-            var values = countries == null ? new List<string>() : countries.ToList();
+            var values = new List<string>();
+            var regionName = GetPrimaryRegionName(regionUrls);
+            foreach (var country in countries ?? new List<string>())
+            {
+                AddDistinctText(values, NormalizeCountry(regionName, country));
+            }
+
             foreach (var overrideTarget in GetCountryOverrideTargets(regionUrls, null))
             {
-                AddDistinctText(values, overrideTarget.OverrideCountry);
+                AddDistinctText(values, NormalizeCountry(overrideTarget.RegionName, overrideTarget.OverrideCountry));
             }
 
             return values.OrderBy(value => value).ToList();
+        }
+
+        private static DashboardRequest CloneDashboardRequest(DashboardRequest request)
+        {
+            request = request ?? new DashboardRequest();
+            return new DashboardRequest
+            {
+                RegionId = request.RegionId,
+                Country = request.Country,
+                OperatorName = request.OperatorName,
+                ServiceName = request.ServiceName,
+                FromDate = request.FromDate,
+                ToDate = request.ToDate
+            };
+        }
+
+        private static string GetPrimaryRegionName(IList<RegionApiTarget> regionUrls)
+        {
+            if (regionUrls == null)
+            {
+                return string.Empty;
+            }
+
+            return regionUrls
+                .Select(item => item.RegionName)
+                .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? string.Empty;
+        }
+
+        private static IList<ReportRow> NormalizeReportCountries(IList<ReportRow> rows)
+        {
+            if (rows == null)
+            {
+                return new List<ReportRow>();
+            }
+
+            foreach (var row in rows)
+            {
+                row.Country = NormalizeCountry(row.RegionName, row.Country);
+            }
+
+            return rows;
+        }
+
+        private static bool MatchesCountryFilter(string regionName, string value, string filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                return true;
+            }
+
+            return string.Equals(
+                NormalizeCountry(regionName, value) ?? string.Empty,
+                NormalizeCountry(regionName, filter) ?? string.Empty,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeCountry(string regionName, string country)
+        {
+            if (string.IsNullOrWhiteSpace(country))
+            {
+                return country;
+            }
+
+            var aliasGroup = GetCountryAliasGroup(regionName, country);
+            return aliasGroup != null ? aliasGroup.DisplayCountry : country;
+        }
+
+        private static IList<string> GetRequestedCountryValues(string regionName, string country)
+        {
+            var values = new List<string>();
+            if (string.IsNullOrWhiteSpace(country))
+            {
+                return values;
+            }
+
+            var aliasGroup = GetCountryAliasGroup(regionName, country);
+            if (aliasGroup != null)
+            {
+                foreach (var aliasCountry in aliasGroup.Countries)
+                {
+                    AddDistinctText(values, aliasCountry);
+                }
+
+                return values;
+            }
+
+            AddDistinctText(values, country);
+            return values;
+        }
+
+        private static CountryAliasGroup GetCountryAliasGroup(string regionName, string country)
+        {
+            if (string.IsNullOrWhiteSpace(regionName) || string.IsNullOrWhiteSpace(country))
+            {
+                return null;
+            }
+
+            return GetConfiguredCountryAliases().FirstOrDefault(item =>
+                string.Equals(item.RegionName, regionName, StringComparison.OrdinalIgnoreCase) &&
+                (MatchesTextFilter(item.DisplayCountry, country) ||
+                 item.Countries.Any(aliasCountry => MatchesTextFilter(aliasCountry, country))));
         }
 
         private IList<RegionApiTarget> GetCountryOverrideTargets(IList<RegionApiTarget> regionUrls, string countryFilter)
@@ -715,6 +891,54 @@ namespace VASReportingTool.Repositories
             }
 
             return overrides;
+        }
+
+        private static IList<CountryAliasGroup> GetConfiguredCountryAliases()
+        {
+            var aliases = new List<CountryAliasGroup>();
+            var rawValue = ConfigurationManager.AppSettings["RegionCountryAliases"];
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return aliases;
+            }
+
+            foreach (var entry in rawValue.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = entry.Split(new[] { '|' }, 3);
+                if (parts.Length != 3)
+                {
+                    continue;
+                }
+
+                var regionName = (parts[0] ?? string.Empty).Trim();
+                var displayCountry = (parts[1] ?? string.Empty).Trim();
+                var countries = (parts[2] ?? string.Empty)
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(value => (value ?? string.Empty).Trim())
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (string.IsNullOrWhiteSpace(regionName) ||
+                    string.IsNullOrWhiteSpace(displayCountry))
+                {
+                    continue;
+                }
+
+                if (!countries.Any(value => string.Equals(value, displayCountry, StringComparison.OrdinalIgnoreCase)))
+                {
+                    countries.Insert(0, displayCountry);
+                }
+
+                aliases.Add(new CountryAliasGroup
+                {
+                    RegionName = regionName,
+                    DisplayCountry = displayCountry,
+                    Countries = countries
+                });
+            }
+
+            return aliases;
         }
 
         private static void AddDistinctText(ICollection<string> values, string value)
@@ -1344,6 +1568,13 @@ namespace VASReportingTool.Repositories
             public string RegionName { get; set; }
             public string Country { get; set; }
             public string Url { get; set; }
+        }
+
+        private class CountryAliasGroup
+        {
+            public string RegionName { get; set; }
+            public string DisplayCountry { get; set; }
+            public IList<string> Countries { get; set; }
         }
 
         private class ReportFetchResult

@@ -22,6 +22,7 @@
         previousRawRows: [],
         periodRows: [],
         charts: {},
+        activeChartTab: "",
         viewMode: "daily",
         activeCurrency: "local",
         exchangeRates: {},
@@ -98,6 +99,7 @@
 
     var dailyTableState = {
         rows: [],
+        rawRows: [],
         columns: [],
         sortKey: "SortValue",
         ascending: false
@@ -591,6 +593,13 @@
 
     function normalizeRow(row) {
         var reportDate = parseReportDate(row.ReportDateText || row.ReportDate || row.Date || row.date);
+        var totalVisitors    = Number(row.TotalVisitors) || 0;
+        var activationCount  = Number(row.ActivationCount) || 0;
+        var freeTrials       = Number(row.FreeTrials) || 0;
+        var renewalRevenue   = Number(row.RenewalRevenue) || 0;
+        var totalRevenue     = Number(row.TotalRevenue) || 0;
+        var churn            = Number(row.Churn) || 0;
+        var activeBase       = Number(row.ActiveBase) || 0;
         return {
             ReportDate: reportDate,
             DateKey: toDateKey(reportDate),
@@ -601,21 +610,25 @@
             Country: normalizeText(row.Country),
             ActivationSource: normalizeText(row.ActivationSource || row.Source || row.source),
             ActivationCategory: normalizeText(row.ActivationCategory || row.ActivationCtg || row.CTG || row.ctg || row.Category || row.category),
-            TotalVisitors: Number(row.TotalVisitors) || 0,
+            TotalVisitors: totalVisitors,
             UniqueVisitors: Number(row.UniqueVisitors) || 0,
             ActivationAttempts: Number(row.ActivationAttempts) || 0,
-            FreeTrials: Number(row.FreeTrials) || 0,
-            ActivationCount: Number(row.ActivationCount) || 0,
+            FreeTrials: freeTrials,
+            ActivationCount: activationCount,
+            TotalActivations: freeTrials + activationCount,
             ActivationRevenue: Number(row.ActivationRevenue) || 0,
             RenewalCount: Number(row.RenewalCount) || 0,
-            RenewalRevenue: Number(row.RenewalRevenue) || 0,
-            TotalRevenue: Number(row.TotalRevenue) || 0,
-            Churn: Number(row.Churn) || 0,
+            RenewalRevenue: renewalRevenue,
+            TotalRevenue: totalRevenue,
+            Churn: churn,
             UserChurn: Number(row.UserChurn || row.userChurn || row.USER_INIT || row.user_init || row.UserInit) || 0,
             SystemChurn: Number(row.SystemChurn || row.systemChurn || row.CP_INIT || row.cp_init || row.CpInit) || 0,
             Deactivation: Number(row.Deactivation || row.deactivation || row.PROVISION || row.provision) || 0,
             GrossBase: Number(row.GrossBase) || 0,
-            ActiveBase: Number(row.ActiveBase) || 0
+            ActiveBase: activeBase,
+            ActivationRate: totalVisitors > 0 ? (activationCount / totalVisitors) * 100 : 0,
+            RenewalShare:   totalRevenue > 0  ? (renewalRevenue / totalRevenue) * 100    : 0,
+            ChurnRate:      activeBase > 0    ? (churn / activeBase) * 100               : 0
         };
     }
 
@@ -1314,7 +1327,7 @@
                     title: metric.title,
                     type: "doughnut",
                     aspectRatio: 1,
-                    heightPx: 260,
+                    heightPx: 190,
                     customData: buildContributionDoughnutData(rankedRows, metric.columnKey),
                     showLegend: false,
                     renderCustomLegend: true,
@@ -1340,6 +1353,7 @@
                 subtitle: "Revenue, activation, renewal, and churn share grouped together in doughnut views by " + dimension.title.toLowerCase(),
                 badge: "Contribution",
                 badgeAccent: "blue",
+                tab: "contributions",
                 row: 6 + index,
                 cardClass: "ranking-card",
                 groupedLayout: "grid",
@@ -1399,9 +1413,10 @@
             subtitle: "Activation trend by " + label.toLowerCase() + " across the selected range",
             badge: "Trend",
             badgeAccent: "cyan",
+            tab: "breakdown",
             type: "bar",
             row: rowNumber,
-            aspectRatio: 1.55,
+            aspectRatio: 2.4,
             stacked: true,
             customData: {
                 labels: orderedBuckets.map(function (bucket) { return bucket.ShortLabel; }),
@@ -1421,6 +1436,148 @@
             showLegend: true,
             valueFormat: "number"
         }];
+    }
+
+    function buildServiceDailyBreakdownCharts(rawRows) {
+        // Rank services by activation count, take top 6
+        var serviceRows = buildDimensionRows(rawRows, "ServiceName", "Unspecified Service", "ActivationCount").slice(0, 6);
+        if (serviceRows.length <= 1) {
+            return [];
+        }
+
+        var selectedLabels = serviceRows.map(function (row) { return row.DisplayLabel; });
+
+        // --- Group raw rows by date bucket, using service name as direct key (same
+        //     pattern as buildDimensionTrendChart so there is no key-prefix mismatch) ---
+        var actGrouped = {};
+        var revGrouped = {};
+
+        rawRows.forEach(function (row) {
+            var svc = normalizeText(row.ServiceName) || "Unspecified Service";
+            if (selectedLabels.indexOf(svc) < 0) {
+                return;
+            }
+
+            var bucket = getPeriodBucket(row.ReportDate);
+            if (!bucket) {
+                return;
+            }
+
+            if (!actGrouped[bucket.key]) {
+                actGrouped[bucket.key] = { DisplayLabel: bucket.label, ShortLabel: bucket.shortLabel, SortValue: bucket.sortValue };
+                revGrouped[bucket.key] = { DisplayLabel: bucket.label, ShortLabel: bucket.shortLabel, SortValue: bucket.sortValue };
+            }
+
+            actGrouped[bucket.key][svc] = (Number(actGrouped[bucket.key][svc]) || 0) + (Number(row.ActivationCount) || 0);
+            revGrouped[bucket.key][svc] = (Number(revGrouped[bucket.key][svc]) || 0) + (Number(row.TotalRevenue) || 0);
+        });
+
+        var actBuckets = Object.keys(actGrouped).map(function (k) { return actGrouped[k]; }).sort(function (a, b) { return a.SortValue - b.SortValue; });
+        var revBuckets = Object.keys(revGrouped).map(function (k) { return revGrouped[k]; }).sort(function (a, b) { return a.SortValue - b.SortValue; });
+
+        if (!actBuckets.length) {
+            return [];
+        }
+
+        var charts = [];
+
+        // Only render multi-bucket trend charts when there is more than one date bucket
+        if (actBuckets.length > 1) {
+            charts.push({
+                id: "serviceDailyActivations",
+                title: "Service-wise Daily Activations",
+                subtitle: "Stacked daily activation count broken down by service across the selected range",
+                badge: "Services",
+                badgeAccent: "emerald",
+                tab: "services",
+                type: "bar",
+                row: 4,
+                aspectRatio: 2.4,
+                stacked: true,
+                customData: {
+                    labels: actBuckets.map(function (b) { return b.ShortLabel; }),
+                    datasets: selectedLabels.map(function (svc, i) {
+                        var color = getPaletteColor(i);
+                        return {
+                            label: svc,
+                            data: actBuckets.map(function (b) { return Number(b[svc]) || 0; }),
+                            backgroundColor: color.stroke,
+                            borderColor: color.stroke,
+                            borderWidth: 0
+                        };
+                    })
+                },
+                showLegend: true,
+                valueFormat: "number"
+            });
+
+            charts.push({
+                id: "serviceDailyRevenue",
+                title: "Service-wise Daily Revenue",
+                subtitle: "Stacked daily revenue broken down by service across the selected range",
+                badge: "Revenue",
+                badgeAccent: "blue",
+                tab: "services",
+                type: "bar",
+                row: 4,
+                aspectRatio: 2.4,
+                stacked: true,
+                customData: {
+                    labels: revBuckets.map(function (b) { return b.ShortLabel; }),
+                    datasets: selectedLabels.map(function (svc, i) {
+                        var color = getPaletteColor(i);
+                        return {
+                            label: svc,
+                            data: revBuckets.map(function (b) { return Number(b[svc]) || 0; }),
+                            backgroundColor: color.stroke,
+                            borderColor: color.stroke,
+                            borderWidth: 0
+                        };
+                    })
+                },
+                showLegend: true,
+                valueFormat: "currency"
+            });
+        } else {
+            // Snapshot view (single bucket) - show a horizontal bar per service
+            charts.push({
+                id: "serviceDailyActivations",
+                title: "Service-wise Activations",
+                subtitle: "Activation count split by service for the selected day",
+                badge: "Services",
+                badgeAccent: "emerald",
+                tab: "services",
+                type: "bar",
+                row: 4,
+                aspectRatio: 2.4,
+                indexAxis: "y",
+                labels: selectedLabels,
+                rows: serviceRows,
+                series: [
+                    { label: "Activations", columnKey: "ActivationCount", type: "bar", accent: "emerald" }
+                ]
+            });
+
+            charts.push({
+                id: "serviceDailyRevenue",
+                title: "Service-wise Revenue",
+                subtitle: "Revenue split by service for the selected day",
+                badge: "Revenue",
+                badgeAccent: "blue",
+                tab: "services",
+                type: "bar",
+                row: 4,
+                aspectRatio: 2.4,
+                indexAxis: "y",
+                labels: selectedLabels,
+                rows: serviceRows,
+                series: [
+                    { label: "Total Revenue", columnKey: "TotalRevenue", type: "bar", accent: "blue" }
+                ]
+            });
+        }
+
+        return charts;
     }
 
     function buildServiceBreakdownCharts(rows) {
@@ -1446,9 +1603,10 @@
                 subtitle: "Ranked share of churn, activations, renewals, and revenue by " + dimension.label.toLowerCase(),
                 badge: "Contribution",
                 badgeAccent: dimension.badgeAccent,
+                tab: "breakdown",
                 type: "bar",
                 row: 9 + index,
-                aspectRatio: 1.3,
+                aspectRatio: 2.0,
                 indexAxis: "y",
                 axisFormat: "percent",
                 maxValue: 100,
@@ -1477,9 +1635,10 @@
                 subtitle: "Activation split for the selected service across the chosen date range",
                 badge: "Share",
                 badgeAccent: dimension.badgeAccent,
+                tab: "breakdown",
                 type: "doughnut",
                 row: 11 + index,
-                aspectRatio: 1.08,
+                aspectRatio: 1.4,
                 customData: doughnutData,
                 showLegend: true,
                 valueFormat: "number"
@@ -1508,9 +1667,10 @@
                 subtitle: "Compare activation volume across services for the selected operator",
                 badge: "Services",
                 badgeAccent: "emerald",
+                tab: "operator",
                 type: "bar",
                 row: 9,
-                aspectRatio: 1.55,
+                aspectRatio: 2.4,
                 labels: serviceRows.map(function (row) { return row.ShortLabel; }),
                 rows: serviceRows,
                 series: [
@@ -1523,9 +1683,10 @@
                 subtitle: "Compare total revenue contribution across services",
                 badge: "Revenue",
                 badgeAccent: "blue",
+                tab: "operator",
                 type: "bar",
                 row: 9,
-                aspectRatio: 1.55,
+                aspectRatio: 2.4,
                 labels: serviceRows.map(function (row) { return row.ShortLabel; }),
                 rows: serviceRows,
                 series: [
@@ -1538,9 +1699,10 @@
                 subtitle: "Activation rate, churn rate, and revenue share by service",
                 badge: "Health",
                 badgeAccent: "rose",
+                tab: "operator",
                 type: "bar",
                 row: 10,
-                aspectRatio: 1.55,
+                aspectRatio: 2.4,
                 axisFormat: "percent",
                 maxValue: 100,
                 labels: serviceRows.map(function (row) { return row.ShortLabel; }),
@@ -1734,7 +1896,7 @@
         var note = state.previousComparisonNote;
         var metrics = [
             { label: "Total Revenue", current: currentSummary.TotalRevenue, previous: previousSummary.TotalRevenue, format: "currency" },
-            { label: "Activations", current: currentSummary.ActivationCount, previous: previousSummary.ActivationCount, format: "number" },
+            { label: "Total Activations", current: currentSummary.TotalActivations, previous: previousSummary.TotalActivations, format: "number" },
             { label: "Renewals", current: currentSummary.RenewalCount, previous: previousSummary.RenewalCount, format: "number" },
             { label: "Churn", current: currentSummary.Churn, previous: previousSummary.Churn, format: "number", inverseGood: true },
             { label: "Active Base", current: currentSummary.ActiveBase, previous: previousSummary.ActiveBase, format: "number" }
@@ -1868,10 +2030,11 @@
             subtitle: "Churn volume by activation source for the active date range",
             badge: "Churn",
             badgeAccent: "rose",
+            tab: "churn",
             type: "bar",
             row: 3,
-            aspectRatio: isCompactSnapshot ? 2.4 : 1.95,
-            heightPx: isCompactSnapshot ? 220 : undefined,
+            aspectRatio: isCompactSnapshot ? 2.8 : 2.8,
+            heightPx: isCompactSnapshot ? 160 : undefined,
             indexAxis: "y",
             cardClass: "focus-card ranking-card" + (isCompactSnapshot ? " snapshot-card compact" : ""),
             labels: sourceRows.map(function (row) { return row.ShortLabel; }),
@@ -1902,10 +2065,11 @@
                 : "User churn, system churn, and deactivation by selected day",
             badge: "Churn",
             badgeAccent: "rose",
+            tab: "churn",
             type: "bar",
             row: 3,
-            aspectRatio: isSnapshotView ? 2.5 : 1.95,
-            heightPx: isSnapshotView ? 220 : undefined,
+            aspectRatio: isSnapshotView ? 2.8 : 2.8,
+            heightPx: isSnapshotView ? 160 : undefined,
             stacked: true,
             cardClass: "focus-card" + (isSnapshotView ? " snapshot-card compact" : ""),
             customData: {
@@ -1960,10 +2124,11 @@
                     : "Activation, renewal, and total revenue across the selected range",
                 badge: "Revenue",
                 badgeAccent: "amber",
+                tab: "revenue",
                 type: "bar",
                 row: 1,
-                aspectRatio: isSnapshotView ? 4.2 : 3,
-                heightPx: isSnapshotView ? 220 : undefined,
+                aspectRatio: isSnapshotView ? 4.2 : 3.8,
+                heightPx: isSnapshotView ? 160 : undefined,
                 cardClass: isSnapshotView ? "snapshot-card compact" : "",
                 series: [
                     { label: "Activation Revenue", columnKey: "ActivationRevenue", type: "bar", accent: "emerald" },
@@ -1979,10 +2144,11 @@
                     : "Grouped traffic stages with activations overlaid for easier comparison",
                 badge: "Funnel",
                 badgeAccent: "cyan",
+                tab: "traffic",
                 type: "bar",
                 row: 2,
-                aspectRatio: isSnapshotView ? 2.3 : 1.7,
-                heightPx: isSnapshotView ? 220 : undefined,
+                aspectRatio: isSnapshotView ? 2.8 : 2.8,
+                heightPx: isSnapshotView ? 160 : undefined,
                 cardClass: isSnapshotView ? "snapshot-card compact" : "",
                 series: [
                     { label: "Visitors", columnKey: "TotalVisitors", type: "bar", accent: "blue", barPercentage: 0.56, categoryPercentage: 0.62 },
@@ -1994,6 +2160,8 @@
             buildDailyChurnReasonChart(rawRows) || buildSourceChurnFallbackChart(rawRows)
         ];
 
+        definitions = definitions.concat(buildServiceDailyBreakdownCharts(rawRows));
+
         if (weekdayRows.length > 1) {
             definitions.push(
                 {
@@ -2002,9 +2170,10 @@
                     subtitle: "See which weekdays generate the strongest activation, renewal, and total revenue",
                     badge: "Weekday",
                     badgeAccent: "amber",
+                    tab: "weekday",
                     type: "bar",
                     row: 5,
-                    aspectRatio: 1.55,
+                    aspectRatio: 2.4,
                     labels: weekdayRows.map(function (row) { return row.ShortLabel; }),
                     rows: weekdayRows,
                     series: [
@@ -2019,9 +2188,10 @@
                     subtitle: "Track activations, renewals, and churn by day of week",
                     badge: "Weekday",
                     badgeAccent: "teal",
+                    tab: "weekday",
                     type: "bar",
                     row: 5,
-                    aspectRatio: 1.55,
+                    aspectRatio: 2.4,
                     labels: weekdayRows.map(function (row) { return row.ShortLabel; }),
                     rows: weekdayRows,
                     series: [
@@ -2263,7 +2433,7 @@
                 responsive: true,
                 maintainAspectRatio: typeof resolvedHeightPx !== "number",
                 indexAxis: isDoughnut ? "x" : (chartDefinition.indexAxis || "x"),
-                aspectRatio: chartDefinition.aspectRatio || (isDoughnut ? 1.15 : 1.8),
+                aspectRatio: chartDefinition.aspectRatio || (isDoughnut ? 1.15 : 2.4),
                 cutout: isDoughnut ? "62%" : undefined,
                 layout: singleBucketChart ? {
                     padding: { left: 12, right: 12, top: 2, bottom: 4 }
@@ -2378,10 +2548,37 @@
         }
     }
 
+    function buildChartCardHtml(chartDefinition) {
+        var headerHtml =
+            "<div class=\"ch-hd\">" +
+            "<div><div class=\"ch-title\">" + chartDefinition.title + "</div>" +
+            "<div class=\"ch-sub\">" + chartDefinition.subtitle + "</div></div>" +
+            "<span class=\"ch-badge " + (chartDefinition.badgeAccent || "blue") + "\">" + chartDefinition.badge + "</span>" +
+            "</div>";
+
+        if (chartDefinition.groupedCharts && chartDefinition.groupedCharts.length) {
+            return headerHtml +
+                "<div class=\"ranking-stack" + (chartDefinition.groupedLayout === "grid" ? " ranking-stack-grid" : "") + "\">" +
+                chartDefinition.groupedCharts.map(function (groupedChart) {
+                    var heightStyle = typeof groupedChart.heightPx === "number"
+                        ? " style=\"height:" + groupedChart.heightPx + "px; min-height:" + groupedChart.heightPx + "px;\""
+                        : "";
+                    return "<section class=\"ranking-group" + (groupedChart.type === "doughnut" ? " ranking-group-doughnut" : "") + "\">" +
+                        "<div class=\"ranking-group-title\">" + groupedChart.title + "</div>" +
+                        "<div class=\"chart-shell ranking-shell" + (groupedChart.type === "doughnut" ? " compact-shell ranking-shell-compact" : "") + "\"" + heightStyle + "><canvas id=\"chart_" + groupedChart.id + "\"></canvas></div>" +
+                        (groupedChart.renderCustomLegend ? "<div class=\"doughnut-legend\" id=\"legend_" + groupedChart.id + "\"></div>" : "") +
+                        "</section>";
+                }).join("") +
+                "</div>";
+        }
+
+        return headerHtml +
+            "<div class=\"chart-shell" + (chartDefinition.type === "doughnut" ? " compact-shell" : "") + "\"><canvas id=\"chart_" + chartDefinition.id + "\"></canvas></div>";
+    }
+
     function renderChartsFromDefinitions(chartDefinitions, labels, rows) {
         var chartArea = byId("chartArea");
         chartArea.innerHTML = "";
-
         destroyCharts();
 
         if (!ChartLibrary) {
@@ -2402,77 +2599,143 @@
         ChartLibrary.defaults.plugins.legend.labels.pointStyleWidth = 8;
         ChartLibrary.defaults.plugins.legend.labels.padding = 14;
 
-        var groupedByRow = {};
+        var TAB_ORDER = ["revenue", "traffic", "churn", "services", "weekday", "contributions", "breakdown", "operator"];
+        var TAB_LABELS = {
+            revenue: "Revenue",
+            traffic: "Traffic & Funnel",
+            churn: "Churn",
+            services: "Services",
+            weekday: "Weekday",
+            contributions: "Contributions",
+            breakdown: "Breakdown",
+            operator: "Operator View"
+        };
+
+        // Group definitions by tab
+        var tabCharts = {};
         chartDefinitions.forEach(function (chart) {
-            var rowKey = chart.row || 0;
-            if (!groupedByRow[rowKey]) {
-                groupedByRow[rowKey] = [];
-            }
-            groupedByRow[rowKey].push(chart);
+            if (!chart) { return; }
+            var tab = chart.tab || "other";
+            if (!tabCharts[tab]) { tabCharts[tab] = []; }
+            tabCharts[tab].push(chart);
         });
 
-        Object.keys(groupedByRow).sort(function (left, right) {
-            return Number(left) - Number(right);
-        }).forEach(function (rowKey) {
-            var rowCharts = groupedByRow[rowKey];
-            var rowElement = document.createElement("div");
-            rowElement.className = "ch-row c" + Math.min(rowCharts.length, 3);
+        // Build ordered tab list containing only tabs that have charts
+        var tabOrder = [];
+        TAB_ORDER.forEach(function (tab) {
+            if (tabCharts[tab] && tabCharts[tab].length) { tabOrder.push(tab); }
+        });
+        Object.keys(tabCharts).forEach(function (tab) {
+            if (TAB_ORDER.indexOf(tab) < 0 && tabCharts[tab].length) { tabOrder.push(tab); }
+        });
 
-            rowCharts.forEach(function (chartDefinition) {
-                var card = document.createElement("div");
-                card.className = "ch-card" + (chartDefinition.cardClass ? " " + chartDefinition.cardClass : "");
-                var headerHtml =
-                    "<div class=\"ch-hd\">" +
-                    "<div><div class=\"ch-title\">" + chartDefinition.title + "</div>" +
-                    "<div class=\"ch-sub\">" + chartDefinition.subtitle + "</div></div>" +
-                    "<span class=\"ch-badge " + (chartDefinition.badgeAccent || "blue") + "\">" + chartDefinition.badge + "</span>" +
-                    "</div>";
+        if (!tabOrder.length) { return; }
 
-                if (chartDefinition.groupedCharts && chartDefinition.groupedCharts.length) {
-                    card.innerHTML = headerHtml +
-                        "<div class=\"ranking-stack" + (chartDefinition.groupedLayout === "grid" ? " ranking-stack-grid" : "") + "\">" +
-                        chartDefinition.groupedCharts.map(function (groupedChart) {
-                            var heightStyle = typeof groupedChart.heightPx === "number"
-                                ? " style=\"height:" + groupedChart.heightPx + "px; min-height:" + groupedChart.heightPx + "px;\""
-                                : "";
-                            return "<section class=\"ranking-group" + (groupedChart.type === "doughnut" ? " ranking-group-doughnut" : "") + "\">" +
-                                "<div class=\"ranking-group-title\">" + groupedChart.title + "</div>" +
-                                "<div class=\"chart-shell ranking-shell" + (groupedChart.type === "doughnut" ? " compact-shell ranking-shell-compact" : "") + "\"" + heightStyle + "><canvas id=\"chart_" + groupedChart.id + "\"></canvas></div>" +
-                                (groupedChart.renderCustomLegend ? "<div class=\"doughnut-legend\" id=\"legend_" + groupedChart.id + "\"></div>" : "") +
-                                "</section>";
-                        }).join("") +
-                        "</div>";
-                } else {
-                    var canvasId = "chart_" + chartDefinition.id;
-                    card.innerHTML = headerHtml +
-                        "<div class=\"chart-shell" + (chartDefinition.type === "doughnut" ? " compact-shell" : "") + "\"><canvas id=\"" + canvasId + "\"></canvas></div>";
-                }
-                rowElement.appendChild(card);
+        // Restore last active tab if still available, otherwise default to first
+        var activeTab = (state.activeChartTab && tabOrder.indexOf(state.activeChartTab) >= 0)
+            ? state.activeChartTab : tabOrder[0];
+        state.activeChartTab = activeTab;
+
+        // Build tab bar
+        var tabBar = document.createElement("div");
+        tabBar.className = "chart-tab-bar";
+        tabOrder.forEach(function (tab) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "chart-tab-btn" + (tab === activeTab ? " active" : "");
+            btn.setAttribute("data-chart-tab", tab);
+            btn.textContent = TAB_LABELS[tab] || tab;
+            tabBar.appendChild(btn);
+        });
+        chartArea.appendChild(tabBar);
+
+        // Build all tab panels — all temporarily visible so Chart.js can measure canvas dimensions
+        var panelEls = {};
+        tabOrder.forEach(function (tab) {
+            var panel = document.createElement("div");
+            panel.className = "chart-tab-panel";
+            panel.setAttribute("data-chart-panel", tab);
+
+            var groupedByRow = {};
+            tabCharts[tab].forEach(function (chart) {
+                var rowKey = chart.row || 0;
+                if (!groupedByRow[rowKey]) { groupedByRow[rowKey] = []; }
+                groupedByRow[rowKey].push(chart);
             });
 
-            chartArea.appendChild(rowElement);
+            Object.keys(groupedByRow).sort(function (a, b) {
+                return Number(a) - Number(b);
+            }).forEach(function (rowKey) {
+                var rowCharts = groupedByRow[rowKey];
+                var rowElement = document.createElement("div");
+                rowElement.className = "ch-row c" + Math.min(rowCharts.length, 3);
+                rowCharts.forEach(function (chartDefinition) {
+                    var card = document.createElement("div");
+                    card.className = "ch-card" + (chartDefinition.cardClass ? " " + chartDefinition.cardClass : "");
+                    card.innerHTML = buildChartCardHtml(chartDefinition);
+                    rowElement.appendChild(card);
+                });
+                panel.appendChild(rowElement);
+            });
 
-            rowCharts.forEach(function (chartDefinition) {
+            chartArea.appendChild(panel);
+            panelEls[tab] = panel;
+        });
+
+        // Instantiate all Chart.js instances while all panels are in DOM
+        tabOrder.forEach(function (tab) {
+            tabCharts[tab].forEach(function (chartDefinition) {
                 if (chartDefinition.groupedCharts && chartDefinition.groupedCharts.length) {
                     chartDefinition.groupedCharts.forEach(function (groupedChart) {
                         renderChartInstance(byId("chart_" + groupedChart.id), groupedChart, labels, rows);
                     });
                     return;
                 }
-
                 renderChartInstance(byId("chart_" + chartDefinition.id), chartDefinition, labels, rows);
+            });
+        });
+
+        // Hide all panels except the active one
+        tabOrder.forEach(function (tab) {
+            if (tab === activeTab) {
+                panelEls[tab].classList.add("active");
+            }
+        });
+
+        // Wire tab click events
+        tabBar.querySelectorAll(".chart-tab-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var clickedTab = btn.getAttribute("data-chart-tab");
+                if (clickedTab === state.activeChartTab) { return; }
+
+                tabBar.querySelectorAll(".chart-tab-btn").forEach(function (b) { b.classList.remove("active"); });
+                panelEls[state.activeChartTab].classList.remove("active");
+
+                btn.classList.add("active");
+                panelEls[clickedTab].classList.add("active");
+                state.activeChartTab = clickedTab;
+
+                // Resize charts in the newly shown panel to fill their containers correctly
+                panelEls[clickedTab].querySelectorAll("canvas").forEach(function (canvas) {
+                    var chart = state.charts[canvas.id];
+                    if (chart) { chart.resize(); }
+                });
             });
         });
     }
 
-    function renderDailyTable(rows) {
+    function renderDailyTable(rows, rawRows) {
         var columns = [
-            { key: "DisplayLabel", label: state.viewMode === "weekly" ? "Week" : "Date", format: "text" },
+            { key: "DisplayLabel", label: state.viewMode === "weekly" ? "Week" : "Date", format: "text", sortKey: "SortValue" },
+            { key: "Country", label: "Country", format: "text", sortKey: "Country" },
+            { key: "OperatorName", label: "Operator", format: "text", sortKey: "OperatorName" },
+            { key: "ServiceName", label: "Service", format: "text", sortKey: "ServiceName" },
             { key: "TotalVisitors", label: "Visitors", format: "number" },
             { key: "UniqueVisitors", label: "Unique Visitors", format: "number" },
             { key: "ActivationAttempts", label: "Attempts", format: "number" },
             { key: "FreeTrials", label: "Free Trials", format: "number" },
             { key: "ActivationCount", label: "Activations", format: "number" },
+            { key: "TotalActivations", label: "Total Activations", format: "number" },
             { key: "ActivationRevenue", label: "Activation Revenue", format: "currency" },
             { key: "RenewalCount", label: "Renewals", format: "number" },
             { key: "RenewalRevenue", label: "Renewal Revenue", format: "currency" },
@@ -2486,20 +2749,22 @@
         ];
 
         dailyTableState.rows = rows.slice();
+        dailyTableState.rawRows = rawRows ? rawRows.slice() : [];
         dailyTableState.columns = columns;
         dailyTableState.sortKey = "SortValue";
         dailyTableState.ascending = false;
 
         byId("tblTitle").textContent = state.viewMode === "weekly" ? "Weekly Breakdown" : "Daily Breakdown";
-        byId("tableSummary").textContent = rows.length + " " + (state.viewMode === "weekly" ? "weekly buckets" : "daily records") + " returned from the secured reporting API layer.";
+        var rawCount = dailyTableState.rawRows.length;
+        byId("tableSummary").textContent = rawCount + " " + (state.viewMode === "weekly" ? "weekly" : "daily") + " records returned from the secured reporting API layer.";
 
         renderDailyTableHead();
         renderDailyTableRows();
     }
 
     function renderDailyTableHead() {
-        var head = dailyTableState.columns.map(function (column, index) {
-            var sortKey = index === 0 ? "SortValue" : column.key;
+        var head = dailyTableState.columns.map(function (column) {
+            var sortKey = column.sortKey || column.key;
             return "<th><button type=\"button\" class=\"sort-btn\" data-sort-target=\"daily\" data-sort-key=\"" + sortKey + "\">" +
                 column.label + "<span class=\"sort-icon\">+-</span></button></th>";
         }).join("");
@@ -2520,30 +2785,45 @@
     }
 
     function renderDailyTableRows() {
-        var rows = dailyTableState.rows.slice().sort(function (left, right) {
-            var leftValue = left[dailyTableState.sortKey];
-            var rightValue = right[dailyTableState.sortKey];
-            var comparison;
+        var sortKey = dailyTableState.sortKey;
+        var ascending = dailyTableState.ascending;
 
-            if (typeof leftValue === "string" || typeof rightValue === "string") {
-                comparison = normalizeText(leftValue).localeCompare(normalizeText(rightValue));
-            } else {
-                comparison = (Number(leftValue) || 0) - (Number(rightValue) || 0);
+        var sorted = dailyTableState.rawRows.slice().sort(function (a, b) {
+            var av, bv, cmp;
+            if (sortKey === "SortValue") {
+                av = a.ReportDate ? a.ReportDate.getTime() : 0;
+                bv = b.ReportDate ? b.ReportDate.getTime() : 0;
+                return ascending ? av - bv : bv - av;
             }
-
-            return dailyTableState.ascending ? comparison : -comparison;
+            av = a[sortKey];
+            bv = b[sortKey];
+            cmp = typeof av === "string" || typeof bv === "string"
+                ? normalizeText(av || "").localeCompare(normalizeText(bv || ""))
+                : (Number(av) || 0) - (Number(bv) || 0);
+            return ascending ? cmp : -cmp;
         });
 
-        byId("reportBody").innerHTML = rows.map(function (row) {
-            return "<tr>" + dailyTableState.columns.map(function (column, index) {
-                var value = row[column.key];
-                var text = index === 0 ? normalizeText(value) : formatMetric(value, column.format);
-                var className = index === 0 ? "" : " class=\"numeric\"";
-                return "<td" + className + ">" + text + "</td>";
-            }).join("") + "</tr>";
+        var metricCols = dailyTableState.columns.slice(4);
+
+        var html = sorted.map(function (row, idx) {
+            var dateLabel = row.ReportDate ? formatDisplayDate(row.ReportDate, false) : (row.DateKey || "—");
+            var country = normalizeText(row.Country) || "—";
+            var operator = normalizeText(row.OperatorName) || "—";
+            var service = normalizeText(row.ServiceName) || "—";
+            var dims = [dateLabel, country, operator, service].join(" ").toLowerCase();
+            return "<tr data-row-key=\"r" + idx + "\" data-dims=\"" + dims + "\">" +
+                "<td class=\"date-cell\">" + dateLabel + "</td>" +
+                "<td>" + country + "</td>" +
+                "<td>" + operator + "</td>" +
+                "<td>" + service + "</td>" +
+                metricCols.map(function (col) {
+                    return "<td class=\"numeric\">" + formatMetric(row[col.key], col.format) + "</td>";
+                }).join("") +
+                "</tr>";
         }).join("");
 
-        updateSortIcons("tHead", dailyTableState.sortKey, dailyTableState.ascending);
+        byId("reportBody").innerHTML = html;
+        updateSortIcons("tHead", sortKey, ascending);
         filterTable();
     }
 
@@ -2593,6 +2873,7 @@
             { key: "ActivationRevenue", label: "Activation Revenue", format: "currency" },
             { key: "RenewalRevenue", label: "Renewal Revenue", format: "currency" },
             { key: "ActivationCount", label: "Activations", format: "number" },
+            { key: "TotalActivations", label: "Total Activations", format: "number" },
             { key: "RenewalCount", label: "Renewals", format: "number" },
             { key: "TotalVisitors", label: "Visitors", format: "number" },
             { key: "ActiveBase", label: "Active Base", format: "number" },
@@ -2719,19 +3000,59 @@
         URL.revokeObjectURL(link.href);
     }
 
+    function escapeCsvVal(val) {
+        var str = val == null ? "" : String(val);
+        if (str.indexOf(",") >= 0 || str.indexOf("\"") >= 0 || str.indexOf("\n") >= 0) {
+            return "\"" + str.replace(/"/g, "\"\"") + "\"";
+        }
+        return str;
+    }
+
     function exportDailyTable() {
-        var rows = dailyTableState.rows.slice().sort(function (left, right) {
-            return dailyTableState.ascending
-                ? ((left[dailyTableState.sortKey] || 0) > (right[dailyTableState.sortKey] || 0) ? 1 : -1)
-                : ((left[dailyTableState.sortKey] || 0) > (right[dailyTableState.sortKey] || 0) ? -1 : 1);
+        if (!dailyTableState.rawRows.length) { return; }
+
+        var query = (byId("tableSearch").value || "").toLowerCase().trim();
+        var metricCols = dailyTableState.columns.slice(4); // skip Date, Country, Operator, Service
+        var headers = ["Date", "Country", "Operator", "Service"].concat(
+            metricCols.map(function (col) { return col.label; })
+        );
+
+        var sorted = dailyTableState.rawRows.slice().sort(function (a, b) {
+            var sortKey = dailyTableState.sortKey;
+            var av = sortKey === "SortValue" ? (a.ReportDate ? a.ReportDate.getTime() : 0) : (a[sortKey] || 0);
+            var bv = sortKey === "SortValue" ? (b.ReportDate ? b.ReportDate.getTime() : 0) : (b[sortKey] || 0);
+            return dailyTableState.ascending ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1);
         });
 
-        exportCsv(
-            "vas-report-" + new Date().toISOString().slice(0, 10) + ".csv",
-            rows,
-            dailyTableState.columns,
-            false
-        );
+        // When a search is active, export only the matching rows
+        if (query) {
+            sorted = sorted.filter(function (row) {
+                var dateLabel = row.ReportDate ? formatDisplayDate(row.ReportDate, false) : (row.DateKey || "");
+                var dims = [dateLabel, row.Country, row.OperatorName, row.ServiceName].join(" ").toLowerCase();
+                return dims.indexOf(query) >= 0;
+            });
+        }
+
+        var csvRows = [headers].concat(sorted.map(function (row) {
+            var dateLabel = row.ReportDate ? formatDisplayDate(row.ReportDate, false) : (row.DateKey || "");
+            return [
+                dateLabel,
+                normalizeText(row.Country) || "",
+                normalizeText(row.OperatorName) || "",
+                normalizeText(row.ServiceName) || ""
+            ].concat(metricCols.map(function (col) { return row[col.key] != null ? row[col.key] : ""; }));
+        }));
+
+        var csvContent = csvRows.map(function (row) {
+            return row.map(escapeCsvVal).join(",");
+        }).join("\n");
+
+        var blob = new Blob([csvContent], { type: "text/csv" });
+        var link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "vas-report-" + new Date().toISOString().slice(0, 10) + ".csv";
+        link.click();
+        URL.revokeObjectURL(link.href);
     }
 
     function exportComparisonTable() {
@@ -2744,10 +3065,20 @@
     }
 
     function filterTable() {
-        var query = (byId("tableSearch").value || "").toLowerCase();
-        byId("reportBody").querySelectorAll("tr").forEach(function (row) {
-            row.style.display = row.textContent.toLowerCase().indexOf(query) >= 0 ? "" : "none";
+        var raw = (byId("tableSearch").value || "").toLowerCase();
+        var terms = raw.split(",").map(function (t) { return t.trim(); }).filter(function (t) { return t.length > 0; });
+        var total = 0, visible = 0;
+        byId("reportBody").querySelectorAll("tr").forEach(function (tr) {
+            total++;
+            var dims = tr.getAttribute("data-dims") || "";
+            var show = terms.length === 0 || terms.every(function (term) { return dims.indexOf(term) >= 0; });
+            tr.style.display = show ? "" : "none";
+            if (show) { visible++; }
         });
+        var label = state.viewMode === "weekly" ? "weekly" : "daily";
+        byId("tableSummary").textContent = terms.length
+            ? visible + " of " + total + " " + label + " records match your search."
+            : total + " " + label + " records returned from the secured reporting API layer.";
     }
 
     function renderDashboard() {
@@ -2764,7 +3095,7 @@
             state.periodRows.map(function (row) { return row.ShortLabel; }),
             state.periodRows
         );
-        renderDailyTable(state.periodRows);
+        renderDailyTable(state.periodRows, displayRows);
         renderComparisonTable(displayRows);
         updateRateInfoBar();
         updateHeader();

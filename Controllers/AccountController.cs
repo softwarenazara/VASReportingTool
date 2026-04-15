@@ -299,6 +299,14 @@ namespace VASReportingTool.Controllers{
             return RedirectToAction("Login");
         }
 
+        [HttpGet]
+        [SessionAuthorize]
+        public JsonResult KeepAlive()
+        {
+            // Accessing the session refreshes the sliding Forms-auth cookie and ASP.NET session.
+            return Json(new { ok = true }, JsonRequestBehavior.AllowGet);
+        }
+
         [HttpPost]
         [AllowAnonymous]
         public JsonResult ApiLogin(LoginViewModel model)

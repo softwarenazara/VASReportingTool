@@ -40,5 +40,91 @@
         }
         @RenderBody()
     </div>
+
+    @if (Request.IsAuthenticated)
+    {
+        <!-- Session timeout warning modal -->
+        <div id="session-warning" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center;">
+            <div style="background:#fff;border-radius:8px;padding:32px 36px;max-width:400px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);">
+                <div style="font-size:2rem;margin-bottom:12px;">&#9201;</div>
+                <h3 style="margin:0 0 10px;font-family:inherit;font-size:1.15rem;">Session expiring soon</h3>
+                <p style="margin:0 0 20px;color:#555;font-size:.95rem;">You will be logged out in <strong><span id="session-countdown">5:00</span></strong> due to inactivity.</p>
+                <button id="session-stay" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:1rem;cursor:pointer;font-family:inherit;">Stay Logged In</button>
+            </div>
+        </div>
+
+        <script>
+            (function () {
+                var TIMEOUT_MS   = 45 * 60 * 1000;   // 45 minutes (must match Web.config)
+                var WARN_BEFORE  =  5 * 60 * 1000;   // show warning 5 min before expiry
+                var logoutUrl    = '@Url.Action("Logout", "Account")';
+                var csrfToken    = '@Html.AntiForgeryToken()'.match(/value="([^"]+)"/);
+                csrfToken = csrfToken ? csrfToken[1] : '';
+
+                var idleTimer, countdownTimer;
+                var warningEl   = document.getElementById('session-warning');
+                var countdownEl = document.getElementById('session-countdown');
+                var stayBtn     = document.getElementById('session-stay');
+
+                function resetTimer() {
+                    clearTimeout(idleTimer);
+                    clearInterval(countdownTimer);
+                    warningEl.style.display = 'none';
+
+                    idleTimer = setTimeout(showWarning, TIMEOUT_MS - WARN_BEFORE);
+                }
+
+                function showWarning() {
+                    warningEl.style.display = 'flex';
+                    var remaining = WARN_BEFORE;
+                    updateCountdown(remaining);
+
+                    countdownTimer = setInterval(function () {
+                        remaining -= 1000;
+                        if (remaining <= 0) {
+                            clearInterval(countdownTimer);
+                            doLogout();
+                        } else {
+                            updateCountdown(remaining);
+                        }
+                    }, 1000);
+                }
+
+                function updateCountdown(ms) {
+                    var m = Math.floor(ms / 60000);
+                    var s = Math.floor((ms % 60000) / 1000);
+                    countdownEl.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+                }
+
+                function doLogout() {
+                    var form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = logoutUrl;
+                    if (csrfToken) {
+                        var t = document.createElement('input');
+                        t.type = 'hidden'; t.name = '__RequestVerificationToken'; t.value = csrfToken;
+                        form.appendChild(t);
+                    }
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+
+                stayBtn.addEventListener('click', function () {
+                    // Ping server to refresh the sliding session, then reset timer
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('GET', '@Url.Action("KeepAlive", "Account")', true);
+                    xhr.send();
+                    resetTimer();
+                });
+
+                // Reset timer on any user activity
+                ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(function (evt) {
+                    document.addEventListener(evt, resetTimer, { passive: true });
+                });
+
+                resetTimer();
+            })();
+        </script>
+    }
 </body>
 </html>

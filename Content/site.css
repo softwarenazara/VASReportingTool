@@ -871,6 +871,11 @@ body {
     font-family: 'IBM Plex Mono', monospace;
 }
 
+/* ── Service-wise row expansion ─────────────────────────────────────── */
+.date-cell {
+    white-space: nowrap;
+}
+
 .dashboard-loader {
     position: fixed;
     inset: 0;
@@ -1113,6 +1118,54 @@ td {
     margin-bottom: 12px;
 }
 
+/* ── Chart tab bar ─────────────────────────────────────────────────────── */
+.chart-tab-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    border-bottom: 2px solid var(--border-light);
+    padding-bottom: 0;
+    margin-bottom: 4px;
+}
+
+.chart-tab-btn {
+    padding: 7px 15px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 8px 8px 0 0;
+    background: none;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-soft);
+    cursor: pointer;
+    position: relative;
+    bottom: -2px;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.chart-tab-btn:hover {
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.chart-tab-btn.active {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+    background: none;
+}
+
+.chart-tab-panel {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.chart-tab-panel.active {
+    display: flex;
+}
+
 .ch-row {
     display: grid;
     gap: 12px;
@@ -1190,11 +1243,11 @@ td {
 }
 
 .ranking-shell {
-    min-height: 220px;
+    min-height: 160px;
 }
 
 .ranking-shell-compact {
-    min-height: 260px;
+    min-height: 180px;
 }
 
 .doughnut-legend {
@@ -1242,7 +1295,7 @@ td {
 .chart-shell {
     position: relative;
     width: 100%;
-    min-height: 210px;
+    min-height: 140px;
 }
 
 .ch-card canvas {
@@ -1251,11 +1304,11 @@ td {
 }
 
 .ch-card.compact .chart-shell {
-    min-height: 190px;
+    min-height: 130px;
 }
 
 .ch-card.snapshot-card .chart-shell {
-    min-height: 180px;
+    min-height: 120px;
 }
 
 .chart-shell.compact-shell {
@@ -1394,6 +1447,11 @@ td {
 
     .ranking-stack-grid {
         grid-template-columns: 1fr;
+    }
+
+    .chart-tab-btn {
+        padding: 6px 11px;
+        font-size: 10px;
     }
 
     .doughnut-legend {
