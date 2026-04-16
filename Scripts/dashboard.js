@@ -44,10 +44,10 @@
         { key: "TotalRevenue", label: "Total Revenue", accent: "blue", format: "currency" },
         { key: "GrossBase", label: "Gross Base", accent: "violet", format: "number" },
         { key: "ActiveBase", label: "Active Base", accent: "teal", format: "number" },
+        { key: "SystemChurn", label: "System Churn", accent: "cyan", format: "number" },
+        { key: "UserChurn", label: "User Churn", accent: "amber", format: "number" },
         { key: "Churn", label: "Churn", accent: "rose", format: "number" },
         { key: "ActivationRate", label: "Activation Rate", accent: "emerald", format: "percent" },
-        { key: "RenewalShare", label: "Renewal Share", accent: "cyan", format: "percent" },
-        { key: "ChurnRate", label: "Churn Rate", accent: "rose", format: "percent" },
         { key: "RevenuePerActiveBase", label: "Revenue / Active Base", accent: "blue", format: "currency" },
         { key: "ActivationUnitRevenue", label: "Activation Revenue / Activation", accent: "emerald", format: "currency" },
         { key: "RenewalUnitRevenue", label: "Renewal Revenue / Renewal", accent: "amber", format: "currency" },
@@ -1790,8 +1790,6 @@
         });
 
         var activationRate = totals.TotalVisitors > 0 ? (totals.ActivationCount / totals.TotalVisitors) * 100 : 0;
-        var renewalShare = totals.TotalRevenue > 0 ? (totals.RenewalRevenue / totals.TotalRevenue) * 100 : 0;
-        var churnRate = totals.ActiveBase > 0 ? (totals.Churn / totals.ActiveBase) * 100 : 0;
 
         var cards = [
             { label: "Total Revenue", value: formatCurrency(totals.TotalRevenue), accent: "blue", sub: "Activation + renewal revenue", trend: computeTrend(rows, "TotalRevenue", false) },
@@ -1808,8 +1806,8 @@
             { label: "Renewals", value: formatNumber(totals.RenewalCount), accent: "cyan", sub: "Successful renewals", trend: computeTrend(rows, "RenewalCount", false) },
             { label: "Active Base", value: formatNumber(totals.ActiveBase), accent: "teal", sub: "Latest active subscriber base", trend: computeTrend(rows, "ActiveBase", false) },
             { label: "Activation Rate", value: formatPercent(activationRate), accent: "emerald", sub: "Activations as a share of traffic", trend: computeTrend(rows, "ActivationRate", false) },
-            { label: "Churn Rate", value: formatPercent(churnRate), accent: "rose", sub: "Churn against active base", trend: computeTrend(rows, "ChurnRate", true) },
-            { label: "Renewal Share", value: formatPercent(renewalShare), accent: "amber", sub: "Renewal revenue within total revenue", trend: computeTrend(rows, "RenewalShare", false) },
+            { label: "System Churn", value: formatNumber(totals.SystemChurn), accent: "cyan", sub: "CP-initiated churn", trend: computeTrend(rows, "SystemChurn", true) },
+            { label: "User Churn", value: formatNumber(totals.UserChurn), accent: "amber", sub: "User-initiated churn", trend: computeTrend(rows, "UserChurn", true) },
             { label: "Gross Base", value: formatNumber(totals.GrossBase), accent: "violet", sub: "Latest gross subscriber base", trend: computeTrend(rows, "GrossBase", false) }
         ];
 
@@ -2757,10 +2755,10 @@
             { key: "TotalRevenue", label: "Total Revenue", format: "currency" },
             { key: "GrossBase", label: "Gross Base", format: "number" },
             { key: "ActiveBase", label: "Active Base", format: "number" },
+            { key: "SystemChurn", label: "System Churn", format: "number" },
+            { key: "UserChurn", label: "User Churn", format: "number" },
             { key: "Churn", label: "Churn", format: "number" },
-            { key: "ActivationRate", label: "Activation Rate", format: "percent" },
-            { key: "RenewalShare", label: "Renewal Share", format: "percent" },
-            { key: "ChurnRate", label: "Churn Rate", format: "percent" }
+            { key: "ActivationRate", label: "Activation Rate", format: "percent" }
         ];
 
         dailyTableState.rows = rows.slice();
