@@ -1575,6 +1575,17 @@ td {
     margin-bottom: 18px;
 }
 
+.auth-brand-logo {
+    width: 180px;
+    height: auto;
+    margin-bottom: 18px;
+}
+
+.topbar-logo {
+    height: 30px;
+    width: auto;
+}
+
 .auth-kicker,
 .auth-form-top {
     color: var(--blue);

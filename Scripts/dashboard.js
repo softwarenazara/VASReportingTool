@@ -28,7 +28,8 @@
         exchangeRates: {},
         ratesLoaded: false,
         ratesPromise: null,
-        previousComparisonNote: ""
+        previousComparisonNote: "",
+        availableOperators: []
     };
 
     var metricColumns = [
@@ -310,6 +311,16 @@
 
     function getRenderableRows(rows) {
         var sourceRows = rows || state.rawRows;
+
+        // When "All operators" is selected but we know the populated operators for this
+        // country, restrict to only those operators so DB-only (non-live) operators are excluded.
+        var selectedOperator = byId("operatorName").value || "";
+        if (!selectedOperator && state.availableOperators.length > 0) {
+            sourceRows = sourceRows.filter(function (row) {
+                return state.availableOperators.indexOf((row.OperatorName || "").toLowerCase()) >= 0;
+            });
+        }
+
         if (state.activeCurrency === "local" || !state.ratesLoaded) {
             return sourceRows.slice();
         }
@@ -856,6 +867,7 @@
             clearSelect("countryName", "All countries");
             clearSelect("operatorName", "All operators");
             clearSelect("serviceName", "All services");
+            state.availableOperators = [];
             return Promise.resolve();
         }
 
@@ -863,11 +875,13 @@
         if (!country) {
             clearSelect("operatorName", "All operators");
             clearSelect("serviceName", "All services");
+            state.availableOperators = [];
             return Promise.resolve();
         }
 
         clearSelect("operatorName", "Loading operators...");
         clearSelect("serviceName", "All services");
+        state.availableOperators = [];
 
         return safeFetchJson(
             buildUrl(
@@ -877,6 +891,7 @@
             )
         )
             .then(function (operators) {
+                state.availableOperators = (operators || []).map(function (op) { return String(op).toLowerCase(); });
                 setSelectOptions("operatorName", "All operators", operators || []);
                 clearSelect("serviceName", "All services");
             });
@@ -938,7 +953,7 @@
     function setDefaultDates() {
         var today = new Date();
         var toDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
-        var fromDate = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() - 6);
+        var fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
         byId("fromDate").value = toDateKey(fromDate);
         byId("toDate").value = toDateKey(toDate);
     }
@@ -3011,7 +3026,8 @@
     function exportDailyTable() {
         if (!dailyTableState.rawRows.length) { return; }
 
-        var query = (byId("tableSearch").value || "").toLowerCase().trim();
+        var raw = (byId("tableSearch").value || "").toLowerCase();
+        var terms = raw.split(",").map(function (t) { return t.trim(); }).filter(function (t) { return t.length > 0; });
         var metricCols = dailyTableState.columns.slice(4); // skip Date, Country, Operator, Service
         var headers = ["Date", "Country", "Operator", "Service"].concat(
             metricCols.map(function (col) { return col.label; })
@@ -3024,12 +3040,12 @@
             return dailyTableState.ascending ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1);
         });
 
-        // When a search is active, export only the matching rows
-        if (query) {
+        // Apply same multi-term AND filter as the grid display
+        if (terms.length) {
             sorted = sorted.filter(function (row) {
                 var dateLabel = row.ReportDate ? formatDisplayDate(row.ReportDate, false) : (row.DateKey || "");
                 var dims = [dateLabel, row.Country, row.OperatorName, row.ServiceName].join(" ").toLowerCase();
-                return dims.indexOf(query) >= 0;
+                return terms.every(function (term) { return dims.indexOf(term) >= 0; });
             });
         }
 
@@ -3175,6 +3191,7 @@
     document.querySelectorAll(".region-chip").forEach(function (chip) {
         chip.addEventListener("click", function () {
             setActiveRegion(chip.getAttribute("data-region-id"));
+            state.availableOperators = [];
             loadRegionFilters();
         });
     });
