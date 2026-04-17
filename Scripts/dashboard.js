@@ -29,7 +29,10 @@
         ratesLoaded: false,
         ratesPromise: null,
         previousComparisonNote: "",
-        availableOperators: []
+        availableOperators: [],
+        availableServices: [],
+        availablePairs: [],
+        availableServicePairs: []
     };
 
     var metricColumns = [
@@ -312,13 +315,44 @@
     function getRenderableRows(rows) {
         var sourceRows = rows || state.rawRows;
 
-        // When "All operators" is selected but we know the populated operators for this
-        // country, restrict to only those operators so DB-only (non-live) operators are excluded.
+        // When "All operators" is selected, restrict to known live operators so
+        // DB-only (non-live) operators are excluded.
         var selectedOperator = byId("operatorName").value || "";
-        if (!selectedOperator && state.availableOperators.length > 0) {
-            sourceRows = sourceRows.filter(function (row) {
-                return state.availableOperators.indexOf((row.OperatorName || "").toLowerCase()) >= 0;
-            });
+        var selectedCountry = getSelectedCountry();
+        if (!selectedOperator) {
+            if (selectedCountry && state.availableOperators.length > 0) {
+                // Country selected: filter by operator name
+                sourceRows = sourceRows.filter(function (row) {
+                    return state.availableOperators.indexOf((row.OperatorName || "").toLowerCase()) >= 0;
+                });
+            } else if (!selectedCountry && state.availablePairs.length > 0) {
+                // All countries: filter by (country|operator) pairs
+                sourceRows = sourceRows.filter(function (row) {
+                    var pair = (row.Country || "").toLowerCase() + "|" + (row.OperatorName || "").toLowerCase();
+                    return state.availablePairs.indexOf(pair) >= 0;
+                });
+            }
+        }
+
+        // When "All services" is selected, filter out inactive services.
+        // With an operator selected: filter by service name (availableServices).
+        // With no operator selected: filter by (operator|service) pairs so a service
+        // inactive for one operator (e.g. Batelco|DCLUB) is not shown even if a
+        // different operator elsewhere has an active service with the same name.
+        var selectedService = byId("serviceName").value || "";
+        if (!selectedService) {
+            if (selectedOperator) {
+                if (state.availableServices.length > 0) {
+                    sourceRows = sourceRows.filter(function (row) {
+                        return state.availableServices.indexOf((row.ServiceName || "").toLowerCase()) >= 0;
+                    });
+                }
+            } else if (state.availableServicePairs.length > 0) {
+                sourceRows = sourceRows.filter(function (row) {
+                    var pair = (row.OperatorName || "").toLowerCase() + "|" + (row.ServiceName || "").toLowerCase();
+                    return state.availableServicePairs.indexOf(pair) >= 0;
+                });
+            }
         }
 
         if (state.activeCurrency === "local" || !state.ratesLoaded) {
@@ -868,6 +902,9 @@
             clearSelect("operatorName", "All operators");
             clearSelect("serviceName", "All services");
             state.availableOperators = [];
+            state.availableServices = [];
+            state.availableServicePairs = [];
+            state.availablePairs = [];
             return Promise.resolve();
         }
 
@@ -876,12 +913,17 @@
             clearSelect("operatorName", "All operators");
             clearSelect("serviceName", "All services");
             state.availableOperators = [];
+            state.availableServices = [];
+            state.availableServicePairs = [];
+            state.availablePairs = [];
             return Promise.resolve();
         }
 
         clearSelect("operatorName", "Loading operators...");
         clearSelect("serviceName", "All services");
         state.availableOperators = [];
+        state.availableServices = [];
+        state.availableServicePairs = [];
 
         return safeFetchJson(
             buildUrl(
@@ -897,6 +939,71 @@
             });
     }
 
+    function loadAllOperatorsForRegion() {
+        if (!state.selectedRegionId) {
+            state.availablePairs = [];
+            state.availableServicePairs = [];
+            return Promise.resolve();
+        }
+        var countrySelect = byId("countryName");
+        var countries = [];
+        for (var i = 0; i < countrySelect.options.length; i++) {
+            var val = countrySelect.options[i].value;
+            if (val) { countries.push(val); }
+        }
+        if (!countries.length) {
+            state.availablePairs = [];
+            state.availableServicePairs = [];
+            return Promise.resolve();
+        }
+        // For each country, fetch operators; then for each (country, operator) fetch
+        // services. Build (operator|service) pairs so that inactive services like
+        // DCLUB are excluded even if another operator elsewhere has a service with
+        // the same name.
+        return Promise.all(countries.map(function (c) {
+            return safeFetchJson(
+                buildUrl(state.api.operators,
+                    "regionId=" + encodeURIComponent(state.selectedRegionId) +
+                    "&country=" + encodeURIComponent(c))
+            ).then(function (operators) {
+                var operatorPairs = (operators || []).map(function (op) {
+                    return c.toLowerCase() + "|" + String(op).toLowerCase();
+                });
+                return Promise.all((operators || []).map(function (op) {
+                    return safeFetchJson(
+                        buildUrl(state.api.services,
+                            "regionId=" + encodeURIComponent(state.selectedRegionId) +
+                            "&country=" + encodeURIComponent(c) +
+                            "&operatorName=" + encodeURIComponent(op))
+                    ).then(function (services) {
+                        return (services || []).map(function (s) {
+                            return String(op).toLowerCase() + "|" + String(s).toLowerCase();
+                        });
+                    }).catch(function () { return []; });
+                })).then(function (svcPairLists) {
+                    var svcPairs = [];
+                    svcPairLists.forEach(function (list) {
+                        list.forEach(function (p) {
+                            if (svcPairs.indexOf(p) === -1) { svcPairs.push(p); }
+                        });
+                    });
+                    return { operatorPairs: operatorPairs, svcPairs: svcPairs };
+                });
+            }).catch(function () { return { operatorPairs: [], svcPairs: [] }; });
+        })).then(function (results) {
+            var pairs = [];
+            var allSvcPairs = [];
+            results.forEach(function (r) {
+                r.operatorPairs.forEach(function (p) { pairs.push(p); });
+                r.svcPairs.forEach(function (p) {
+                    if (allSvcPairs.indexOf(p) === -1) { allSvcPairs.push(p); }
+                });
+            });
+            state.availablePairs = pairs;
+            state.availableServicePairs = allSvcPairs;
+        });
+    }
+
     function loadServices() {
         if (!state.selectedRegionId) {
             clearSelect("serviceName", "All services");
@@ -907,10 +1014,14 @@
         var operatorName = byId("operatorName").value || "";
         if (!operatorName) {
             clearSelect("serviceName", "All services");
+            state.availableServices = [];
+            state.availableServicePairs = [];
             return Promise.resolve();
         }
 
         clearSelect("serviceName", "Loading services...");
+        state.availableServices = [];
+        state.availableServicePairs = [];
 
         return safeFetchJson(
             buildUrl(
@@ -920,7 +1031,54 @@
                 "&operatorName=" + encodeURIComponent(operatorName)
             )
         ).then(function (services) {
+            state.availableServices = (services || []).map(function (s) { return String(s).toLowerCase(); });
             setSelectOptions("serviceName", "All services", services || []);
+        });
+    }
+
+    // When a country is selected but no operator, fetches services for every live
+    // operator in that country and builds (operator|service) pairs. This ensures
+    // inactive services like DCLUB are excluded even if a different operator has an
+    // active service with the same name.
+    function loadAllServicesForSelectedCountry() {
+        if (!state.selectedRegionId) {
+            state.availableServicePairs = [];
+            return Promise.resolve();
+        }
+        var country = getSelectedCountry();
+        if (!country) {
+            state.availableServicePairs = [];
+            return Promise.resolve();
+        }
+        var operatorSelect = byId("operatorName");
+        var operators = [];
+        for (var i = 0; i < operatorSelect.options.length; i++) {
+            var val = operatorSelect.options[i].value;
+            if (val) { operators.push(val); }
+        }
+        if (!operators.length) {
+            state.availableServicePairs = [];
+            return Promise.resolve();
+        }
+        return Promise.all(operators.map(function (op) {
+            return safeFetchJson(
+                buildUrl(state.api.services,
+                    "regionId=" + encodeURIComponent(state.selectedRegionId) +
+                    "&country=" + encodeURIComponent(country) +
+                    "&operatorName=" + encodeURIComponent(op))
+            ).then(function (services) {
+                return (services || []).map(function (s) {
+                    return String(op).toLowerCase() + "|" + String(s).toLowerCase();
+                });
+            }).catch(function () { return []; });
+        })).then(function (pairLists) {
+            var allPairs = [];
+            pairLists.forEach(function (list) {
+                list.forEach(function (p) {
+                    if (allPairs.indexOf(p) === -1) { allPairs.push(p); }
+                });
+            });
+            state.availableServicePairs = allPairs;
         });
     }
 
@@ -3127,17 +3285,53 @@
         setError("");
         state.previousComparisonNote = "";
 
+        // If a country is selected but operators haven't been loaded yet (e.g. browser
+        // restored form state without firing change events), load them first so that
+        // the availableOperators/availableServices filters in getRenderableRows work correctly.
+        var country = getSelectedCountry();
         var previousRange = getPreviousDateRange();
-        Promise.all([
-            fetchReportRows(),
-            previousRange
-                ? fetchReportRows(previousRange).then(function (rows) {
-                    return { rows: rows, failed: false };
-                }).catch(function () {
-                    return { rows: [], failed: true };
-                })
-                : Promise.resolve({ rows: [], failed: false })
-        ])
+
+        var preload;
+        if (country && state.availableOperators.length === 0) {
+            // Country selected but operators not yet loaded (e.g. page reload restored form state)
+            preload = loadOperators().catch(function () {});
+        } else if (!country && (state.availablePairs.length === 0 || state.availableServicePairs.length === 0)) {
+            // All countries — load operators per-country to build (country|operator) and
+            // (operator|service) pairs. Re-runs if service pairs were not loaded yet.
+            preload = loadAllOperatorsForRegion().catch(function () {});
+        } else {
+            preload = Promise.resolve();
+        }
+
+        preload
+            .then(function () {
+                var operator = byId("operatorName").value || "";
+                if (operator && state.availableServices.length === 0) {
+                    return loadServices().catch(function () {});
+                } else if (!operator && state.availableServicePairs.length === 0) {
+                    // No operator selected — load (operator|service) pairs so only
+                    // currently active services pass the filter in getRenderableRows.
+                    // All-countries case: handled inside loadAllOperatorsForRegion above.
+                    // Country-selected case: fetch per operator in that country.
+                    var selectedCountry = getSelectedCountry();
+                    if (selectedCountry) {
+                        return loadAllServicesForSelectedCountry().catch(function () {});
+                    }
+                }
+                return Promise.resolve();
+            })
+            .then(function () {
+                return Promise.all([
+                    fetchReportRows(),
+                    previousRange
+                        ? fetchReportRows(previousRange).then(function (rows) {
+                            return { rows: rows, failed: false };
+                        }).catch(function () {
+                            return { rows: [], failed: true };
+                        })
+                        : Promise.resolve({ rows: [], failed: false })
+                ]);
+            })
             .then(function (results) {
                 state.rawRows = results[0];
                 state.previousRawRows = results[1].rows || [];
@@ -3190,6 +3384,9 @@
         chip.addEventListener("click", function () {
             setActiveRegion(chip.getAttribute("data-region-id"));
             state.availableOperators = [];
+            state.availableServices = [];
+            state.availableServicePairs = [];
+            state.availablePairs = [];
             loadRegionFilters();
         });
     });
