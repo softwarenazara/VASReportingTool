@@ -5,6 +5,9 @@
 }
 
 <style>
+    .hc-cumul-row td { font-weight: 700; background: #eff6ff; border-top: 2px solid #bfdbfe !important; }
+    .hc-toggle { background:none; border:none; cursor:pointer; padding:0 4px; font-size:11px; color:#2563eb; vertical-align:middle; line-height:1; }
+    .hc-toggle:hover { color:#1d4ed8; }
     .hc-tab {
         padding: 10px 22px;
         background: none;
@@ -400,7 +403,13 @@
         normalizedHours.forEach(function (hour) {
             var option = document.createElement('option');
             option.value = String(hour);
-            option.textContent = hourLabel(hour);
+            var isLatest = hour === Number(currentHour);
+            option.textContent = hourLabel(hour) + (isLatest ? ' (Latest)' : '');
+            if (isLatest) {
+                option.style.fontWeight = 'bold';
+                option.style.color = '#2563eb';
+                option.style.background = '#eff6ff';
+            }
             sel.appendChild(option);
         });
 
@@ -421,15 +430,12 @@
 
     function renderTable() {
         var tab = TABS[activeTab];
-        if (!tab) {
-            return;
-        }
+        if (!tab) { return; }
 
         var visibleData = getVisibleData();
         if (!visibleData.length) {
-            document.getElementById('hc-empty').textContent = selectedHour === ''
-                ? 'No hourly data found for the selected filters.'
-                : 'No hourly data found for ' + hourLabel(selectedHour) + ' and the selected filters.';
+            var upTo = selectedHour === '' ? '' : ' up to ' + hourLabel(Number(selectedHour));
+            document.getElementById('hc-empty').textContent = 'No hourly data found' + upTo + ' for the selected filters.';
             document.getElementById('hc-count').textContent = '0 rows';
             setState('empty');
             return;
@@ -440,25 +446,114 @@
         hHtml += '</tr>';
         document.getElementById('hc-thead').innerHTML = hHtml;
 
-        var html = '';
-        var idx = 0;
+        // Group rows by Country|Operator|Service for cumulative rows
+        var groupKeys = [];
+        var groupMap  = {};
         visibleData.forEach(function (r) {
-            var cells = tab.cells(r);
-            if (Array.isArray(cells)) {
-                cells.forEach(function (c) {
+            var k = (r.Country || '') + '|||' + (r.Operator || '') + '|||' + (r.Service || '');
+            if (!groupMap[k]) { groupMap[k] = []; groupKeys.push(k); }
+            groupMap[k].push(r);
+        });
+
+        var html         = '';
+        var idx          = 0;
+        var groupCounter = 0;
+
+        groupKeys.forEach(function (key) {
+            var gRows = groupMap[key];
+            var base  = gRows[0];
+            groupCounter++;
+            var groupId = 'hcg-' + groupCounter;
+
+            // Build cumulative totals for this Country/Operator/Service
+            var cumul = {
+                Country: base.Country, Operator: base.Operator, Service: base.Service,
+                Hour: -1,
+                TodayRev: 0,  YestRev: 0,  Avg7Rev: 0,
+                TodayActiv: 0, YestActiv: 0, Avg7Activ: 0,
+                TodayChurn: 0, YestChurn: 0, Avg7Churn: 0,
+                TodayGood: 0,  YestGood: 0,  Avg7Good: 0,
+                TodayBad: 0,   YestBad: 0,   Avg7Bad: 0
+            };
+            gRows.forEach(function (r) {
+                cumul.TodayRev   += Number(r.TodayRev)   || 0;
+                cumul.YestRev    += Number(r.YestRev)    || 0;
+                cumul.Avg7Rev    += Number(r.Avg7Rev)    || 0;
+                cumul.TodayActiv += Number(r.TodayActiv) || 0;
+                cumul.YestActiv  += Number(r.YestActiv)  || 0;
+                cumul.Avg7Activ  += Number(r.Avg7Activ)  || 0;
+                cumul.TodayChurn += Number(r.TodayChurn) || 0;
+                cumul.YestChurn  += Number(r.YestChurn)  || 0;
+                cumul.Avg7Churn  += Number(r.Avg7Churn)  || 0;
+                cumul.TodayGood  += Number(r.TodayGood)  || 0;
+                cumul.YestGood   += Number(r.YestGood)   || 0;
+                cumul.Avg7Good   += Number(r.Avg7Good)   || 0;
+                cumul.TodayBad   += Number(r.TodayBad)   || 0;
+                cumul.YestBad    += Number(r.YestBad)    || 0;
+                cumul.Avg7Bad    += Number(r.Avg7Bad)    || 0;
+            });
+
+            // Toggle arrow button injected next to cumulative label
+            var toggleBtn = ' <button class="hc-toggle" data-group="' + groupId + '" title="Show / hide hourly breakdown">&#9660;</button>';
+
+            // Label reflects selected hour: "Till 9:00" for a past hour, "TOTAL" for all hours
+            var cumulLabel = selectedHour !== '' ? 'Till ' + hourLabel(Number(selectedHour)) : 'TOTAL';
+
+            // Render cumulative TOTAL row (highlighted blue) with toggle arrow
+            var cCells = tab.cells(cumul);
+            if (Array.isArray(cCells)) {
+                // Retry tab: two cumul rows — arrow only on the first
+                cCells[0] = cCells[0].replace('>TOTAL<', '>' + cumulLabel + toggleBtn + '<');
+                cCells.forEach(function (c) {
                     idx++;
-                    html += '<tr><td style="color:#9ca3af;font-size:11px;">' + idx + '</td>' + c + '</tr>';
+                    html += '<tr class="hc-cumul-row"><td style="color:#6b7280;font-size:11px;">' + idx + '</td>' + c + '</tr>';
                 });
             } else {
+                cCells = cCells.replace('>TOTAL<', '>' + cumulLabel + toggleBtn + '<');
                 idx++;
-                html += '<tr><td style="color:#9ca3af;font-size:11px;">' + idx + '</td>' + cells + '</tr>';
+                html += '<tr class="hc-cumul-row"><td style="color:#6b7280;font-size:11px;">' + idx + '</td>' + cCells + '</tr>';
             }
+
+            // Individual hour rows — hidden by default, revealed on arrow click
+            gRows.forEach(function (r) {
+                var cells = tab.cells(r);
+                if (Array.isArray(cells)) {
+                    cells.forEach(function (c) {
+                        idx++;
+                        html += '<tr data-group="' + groupId + '" style="display:none;"><td style="color:#9ca3af;font-size:11px;">' + idx + '</td>' + c + '</tr>';
+                    });
+                } else {
+                    idx++;
+                    html += '<tr data-group="' + groupId + '" style="display:none;"><td style="color:#9ca3af;font-size:11px;">' + idx + '</td>' + cells + '</tr>';
+                }
+            });
         });
 
         document.getElementById('hc-tbody').innerHTML = html;
-        document.getElementById('hc-count').textContent = idx + ' row' + (idx !== 1 ? 's' : '');
+        var rangeLabel = selectedHour !== ''
+            ? ' | Cumulative 0:00 – ' + hourLabel(Number(selectedHour))
+            : '';
+        document.getElementById('hc-count').textContent = idx + ' row' + (idx !== 1 ? 's' : '') + rangeLabel;
         setState('data');
     }
+
+    // Expand / collapse hourly rows when ▼ / ▲ is clicked on a TOTAL row
+    document.getElementById('hc-wrap').addEventListener('click', function (e) {
+        var btn = e.target;
+        while (btn && btn !== this) {
+            if (btn.className && btn.className.indexOf('hc-toggle') >= 0) { break; }
+            btn = btn.parentNode;
+        }
+        if (!btn || !btn.className || btn.className.indexOf('hc-toggle') < 0) { return; }
+
+        var groupId = btn.getAttribute('data-group');
+        var rows    = document.querySelectorAll('tr[data-group="' + groupId + '"]');
+        var expand  = rows.length > 0 && rows[0].style.display === 'none';
+        for (var i = 0; i < rows.length; i++) {
+            rows[i].style.display = expand ? '' : 'none';
+        }
+        btn.innerHTML = expand ? '&#9650;' : '&#9660;'; // ▲ collapse  ▼ expand
+    });
 
     function getVisibleData() {
         if (!allData.length) {
@@ -470,7 +565,8 @@
         }
 
         var selectedHourNumber = Number(selectedHour);
-        return allData.filter(function (row) { return Number(row.Hour) === selectedHourNumber; });
+        // Cumulative: show all hours up to and including the selected hour
+        return allData.filter(function (row) { return Number(row.Hour) <= selectedHourNumber; });
     }
 
     function setState(state, msg) {
@@ -542,10 +638,8 @@
 
     function hourLabel(hour) {
         var h = Number(hour);
-        if (isNaN(h) || h < 0) {
-            return '-';
-        }
-
+        if (isNaN(h)) { return '-'; }
+        if (h < 0)    { return 'TOTAL'; }
         var hh = h < 10 ? '0' + h : String(h);
         return hh + ':00';
     }
