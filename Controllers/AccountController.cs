@@ -67,38 +67,47 @@ namespace VASReportingTool.Controllers{
                 return View(model);
             }
 
-            var user = _authenticationService.Validate(model.Username, model.Password);
-            if (user == null)
+            try
             {
-                model.ErrorMessage = "Invalid credentials or inactive account.";
+                var user = _authenticationService.Validate(model.Username, model.Password);
+                if (user == null)
+                {
+                    model.ErrorMessage = "Invalid credentials or inactive account.";
+                    return View(model);
+                }
+
+                if (string.IsNullOrWhiteSpace(user.Email))
+                {
+                    model.ErrorMessage = "User email is not configured. Please contact admin.";
+                    return View(model);
+                }
+
+                var ipAddress = GetClientIpAddress();
+                var location = _ipLocationService.Resolve(ipAddress);
+                var sessionKey = Guid.NewGuid().ToString("N");
+                var sendResult = SendOtpChallenge(user, sessionKey, ipAddress, location.ToDisplayText(), true);
+                if (!sendResult.Success)
+                {
+                    model.ErrorMessage = sendResult.Message;
+                    return View(model);
+                }
+
+                Session["PendingUserId"] = user.UserId;
+                Session["PendingUsername"] = user.Username;
+                Session["PendingRole"] = user.Role;
+                Session["PendingSessionKey"] = sessionKey;
+                Session["PendingLocation"] = location.ToDisplayText();
+                Session["PendingIpAddress"] = ipAddress;
+                Session["PendingEmailHint"] = sendResult.MaskedEmail;
+                _repository.LogUserActivity(BuildActivity(user, sessionKey, "PasswordValidated", "Primary credentials validated.", ipAddress, location.ToDisplayText()));
+                return RedirectToAction("VerifyOtp", new { username = user.Username, info = sendResult.Message, v = DateTime.UtcNow.Ticks });
+            }
+            catch (Exception ex)
+            {
+                Services.LocalDiagnostics.Log("LoginError", ex.ToString());
+                model.ErrorMessage = "Unable to process login. Please try again in a moment.";
                 return View(model);
             }
-
-            if (string.IsNullOrWhiteSpace(user.Email))
-            {
-                model.ErrorMessage = "User email is not configured. Please contact admin.";
-                return View(model);
-            }
-
-            var ipAddress = GetClientIpAddress();
-            var location = _ipLocationService.Resolve(ipAddress);
-            var sessionKey = Guid.NewGuid().ToString("N");
-            var sendResult = SendOtpChallenge(user, sessionKey, ipAddress, location.ToDisplayText(), true);
-            if (!sendResult.Success)
-            {
-                model.ErrorMessage = sendResult.Message;
-                return View(model);
-            }
-
-            Session["PendingUserId"] = user.UserId;
-            Session["PendingUsername"] = user.Username;
-            Session["PendingRole"] = user.Role;
-            Session["PendingSessionKey"] = sessionKey;
-            Session["PendingLocation"] = location.ToDisplayText();
-            Session["PendingIpAddress"] = ipAddress;
-            Session["PendingEmailHint"] = sendResult.MaskedEmail;
-            _repository.LogUserActivity(BuildActivity(user, sessionKey, "PasswordValidated", "Primary credentials validated.", ipAddress, location.ToDisplayText()));
-            return RedirectToAction("VerifyOtp", new { username = user.Username, info = sendResult.Message, v = DateTime.UtcNow.Ticks });
         }
 
         [AllowAnonymous]
@@ -163,7 +172,7 @@ namespace VASReportingTool.Controllers{
             Session["SessionKey"] = sessionKey;
             Session["UserLocation"] = locationText;
             Session["UserIpAddress"] = ipAddress;
-            Session.Timeout = 30;
+            Session.Timeout = 180;
             ClearPendingSession();
             _repository.LogUserActivity(BuildActivity(user, sessionKey, "LoginSuccessful", "OTP verified and user session started.", ipAddress, locationText));
             return RedirectToAction("Index", "Dashboard");

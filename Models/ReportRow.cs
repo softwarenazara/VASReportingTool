@@ -31,5 +31,8 @@ namespace VASReportingTool.Models
         public int Deactivation { get; set; }
         public int GrossBase { get; set; }
         public int ActiveBase { get; set; }
+        public int Hour { get; set; }
+        public int GoodBase { get; set; }
+        public int BadBase { get; set; }
     }
 }

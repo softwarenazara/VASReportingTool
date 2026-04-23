@@ -51,11 +51,7 @@ namespace VASReportingTool.Filters
                 return;
             }
 
-            filterContext.Result = new RedirectToRouteResult(new RouteValueDictionary(new
-            {
-                controller = "Account",
-                action = "Login"
-            }));
+            filterContext.Result = new RedirectResult("/Account/Login?timeout=1");
         }
     }
 }

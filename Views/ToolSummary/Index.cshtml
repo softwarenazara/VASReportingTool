@@ -1,0 +1,195 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Tool Summary";
+}
+<style>
+    .ts-day-th {
+        font-size: 10px;
+        font-weight: 700;
+        color: #6b7280;
+        text-align: center;
+        padding: 6px 3px;
+        min-width: 24px;
+        white-space: nowrap;
+    }
+    .ts-day-td {
+        text-align: center;
+        padding: 4px 3px;
+    }
+    .ts-dot {
+        display: inline-block;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+    }
+    .ts-dot-yes { background: #22c55e; }
+    .ts-dot-no  { background: #ef4444; }
+    .ts-miss-badge {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #fee2e2;
+        color: #b91c1c;
+        white-space: nowrap;
+    }
+    @@keyframes ts-spin { to { transform: rotate(360deg); } }
+</style>
+
+<div class="container" style="padding-top:24px;padding-bottom:40px;">
+    <div class="page-actions" style="margin-bottom:16px;">
+        <div>
+            <h1 class="section-title" style="margin-bottom:2px;">Tool Summary</h1>
+            <div id="summary-date" style="font-size:12px;color:#6b7280;font-family:'IBM Plex Mono',monospace;"></div>
+        </div>
+        <div class="btn-row">
+            <input type="text" id="ts-search" placeholder="Search..."
+                   style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;width:220px;" />
+            <a class="ghost-btn" href="@Url.Action("Index","Dashboard")">Go to Reports</a>
+        </div>
+    </div>
+
+    <div class="report-table-card card">
+        <div id="ts-loading" style="padding:56px;text-align:center;">
+            <div style="display:inline-block;width:44px;height:44px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:ts-spin 0.8s linear infinite;"></div>
+            <div style="margin-top:16px;color:#6b7280;font-size:13px;">Fetching current month report status...</div>
+        </div>
+        <div id="ts-error"  style="display:none;padding:32px;text-align:center;color:#dc2626;font-size:14px;"></div>
+        <div id="ts-wrap"   style="display:none;overflow-x:auto;max-height:660px;overflow-y:auto;">
+            <table class="report-table" id="ts-table" style="min-width:700px;">
+                <thead id="ts-thead"></thead>
+                <tbody id="ts-tbody"></tbody>
+            </table>
+        </div>
+        <div id="ts-empty" style="display:none;padding:48px;text-align:center;color:#6b7280;font-size:14px;"></div>
+    </div>
+    <div id="ts-count" style="margin-top:8px;font-size:12px;color:#9ca3af;text-align:right;"></div>
+</div>
+
+<script>
+(function () {
+    var allRows  = [];
+    var dayNums  = [];   // [1,2,...,22]
+    var dayDates = [];   // ["2026-04-01",...]
+
+    function monthName(dateStr) {
+        if (!dateStr) return '';
+        var d = new Date(dateStr + 'T00:00:00');
+        return d.toLocaleString('default', { month: 'long' }) + ' ' + d.getFullYear();
+    }
+
+    function shortDate(dateStr) {
+        if (!dateStr) return '';
+        var d = new Date(dateStr + 'T00:00:00');
+        return d.toLocaleString('default', { month: 'short' }) + ' ' + d.getDate();
+    }
+
+    function buildHeader() {
+        var fixed = '<th style="width:28px;color:#9ca3af;">#</th>'
+            + '<th>Region</th>'
+            + '<th>Country</th>'
+            + '<th>Operator</th>'
+            + '<th>Service</th>'
+            + '<th style="text-align:center;white-space:nowrap;">Missing</th>';
+
+        var dayCols = '';
+        for (var i = 0; i < dayNums.length; i++) {
+            dayCols += '<th class="ts-day-th" title="' + dayDates[i] + '">' + dayNums[i] + '</th>';
+        }
+        document.getElementById('ts-thead').innerHTML = '<tr>' + fixed + dayCols + '</tr>';
+    }
+
+    function renderRows(rows) {
+        var tbody = document.getElementById('ts-tbody');
+
+        if (!rows.length) {
+            tbody.innerHTML = '';
+            document.getElementById('ts-wrap').style.display  = 'none';
+            document.getElementById('ts-empty').style.display = 'block';
+            document.getElementById('ts-empty').textContent   = 'No services with missing reports found.';
+            document.getElementById('ts-count').textContent   = '';
+            return;
+        }
+
+        document.getElementById('ts-empty').style.display = 'none';
+        document.getElementById('ts-wrap').style.display  = 'block';
+
+        var html = '';
+        rows.forEach(function (r, i) {
+            var missBadge = '<span class="ts-miss-badge">' + r.MissingCount + ' day' + (r.MissingCount !== 1 ? 's' : '') + '</span>';
+
+            var dayCells = '';
+            (r.DayStatuses || []).forEach(function (ok, idx) {
+                var cls   = ok ? 'ts-dot-yes' : 'ts-dot-no';
+                var title = ok ? 'Generated – ' + dayDates[idx] : 'Missing – ' + dayDates[idx];
+                dayCells += '<td class="ts-day-td"><span class="ts-dot ' + cls + '" title="' + title + '"></span></td>';
+            });
+
+            html += '<tr>'
+                + '<td style="color:#9ca3af;font-size:11px;">' + (i + 1) + '</td>'
+                + '<td>' + esc(r.Region)   + '</td>'
+                + '<td><strong>' + esc(r.Country)  + '</strong></td>'
+                + '<td>' + esc(r.Operator) + '</td>'
+                + '<td>' + esc(r.Service)  + '</td>'
+                + '<td style="text-align:center;">' + missBadge + '</td>'
+                + dayCells
+                + '</tr>';
+        });
+
+        tbody.innerHTML = html;
+        document.getElementById('ts-count').textContent =
+            rows.length + ' service' + (rows.length !== 1 ? 's' : '') + ' with missing reports'
+            + (rows.length !== allRows.length ? ' (filtered from ' + allRows.length + ')' : '');
+    }
+
+    function esc(s) {
+        return (s || '—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    document.getElementById('ts-search').addEventListener('input', function () {
+        var q = this.value.trim().toLowerCase();
+        if (!q) { renderRows(allRows); return; }
+        renderRows(allRows.filter(function (r) {
+            return (r.Region   || '').toLowerCase().indexOf(q) >= 0
+                || (r.Country  || '').toLowerCase().indexOf(q) >= 0
+                || (r.Operator || '').toLowerCase().indexOf(q) >= 0
+                || (r.Service  || '').toLowerCase().indexOf(q) >= 0;
+        }));
+    });
+
+    fetch('@Url.Action("Data","ToolSummary")')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            document.getElementById('ts-loading').style.display = 'none';
+
+            if (data.Message) {
+                document.getElementById('ts-empty').style.display = 'block';
+                document.getElementById('ts-empty').textContent   = data.Message;
+                document.getElementById('ts-wrap').style.display  = 'none';
+                return;
+            }
+
+            dayNums  = data.Days     || [];
+            dayDates = data.DayDates || [];
+
+            var month = monthName(data.MonthStart);
+            var range = shortDate(data.MonthStart) + ' – ' + shortDate(data.Yesterday);
+            document.getElementById('summary-date').textContent =
+                month + '  |  ' + range + '  |  Only services with missing reports';
+
+            allRows = (data.Rows || []).slice().sort(function (a, b) {
+                return (a.Region + a.Country + a.Operator + a.Service)
+                    .localeCompare(b.Region + b.Country + b.Operator + b.Service);
+            });
+
+            buildHeader();
+            renderRows(allRows);
+        })
+        .catch(function () {
+            document.getElementById('ts-loading').style.display = 'none';
+            document.getElementById('ts-error').style.display   = 'block';
+            document.getElementById('ts-error').textContent     = 'Failed to load data. Please try again.';
+        });
+})();
+</script>

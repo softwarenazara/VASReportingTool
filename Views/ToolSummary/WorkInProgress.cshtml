@@ -1,0 +1,13 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+<div class="container" style="padding-top:64px;text-align:center;">
+    <div class="card" style="max-width:480px;margin:0 auto;padding:48px 40px;">
+        <h1 class="section-title" style="margin-bottom:12px;">@ViewBag.Feature</h1>
+        <p style="color:#6b7280;font-size:15px;margin-bottom:28px;">
+            This section is currently <strong>work in progress</strong>.<br />
+            Check back soon.
+        </p>
+        <a class="ghost-btn" href="@Url.Action("Index", "Dashboard")">Go to Reports</a>
+    </div>
+</div>

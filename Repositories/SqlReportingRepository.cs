@@ -419,6 +419,9 @@ namespace VASReportingTool.Repositories
         public IList<ReportRow> GetReportRows(int userId, DashboardRequest request, bool isAdmin)
         {
             request = request ?? new DashboardRequest();
+            var fetchRows = IsHourlyRequest(request)
+                ? new Func<IList<RegionApiTarget>, DashboardRequest, bool, ReportFetchResult>(FetchHourlyReportRows)
+                : new Func<IList<RegionApiTarget>, DashboardRequest, bool, ReportFetchResult>(FetchReportRows);
             var rows = new List<ReportRow>();
             var regionUrls = GetAccessibleRegionUrls(userId, request.RegionId, isAdmin);
             if (string.IsNullOrWhiteSpace(request.Country))
@@ -427,12 +430,12 @@ namespace VASReportingTool.Repositories
 
                 if (regionUrls.Count > 0)
                 {
-                    rows.AddRange(FetchReportRows(regionUrls, request, true).Rows);
+                    rows.AddRange(fetchRows(regionUrls, request, true).Rows);
                 }
 
                 if (overrideTargets.Count > 0)
                 {
-                    var overrideResult = FetchReportRows(overrideTargets, request, false);
+                    var overrideResult = fetchRows(overrideTargets, request, false);
                     if (overrideResult.HasSuccessfulResponse)
                     {
                         rows = ExcludeReportRows(rows, overrideTargets).ToList();
@@ -442,7 +445,7 @@ namespace VASReportingTool.Repositories
             }
             else
             {
-                rows.AddRange(GetCountryScopedReportRows(regionUrls, request));
+                rows.AddRange(GetCountryScopedReportRows(regionUrls, request, fetchRows));
             }
 
             rows = NormalizeReportCountries(rows).ToList();
@@ -501,7 +504,10 @@ namespace VASReportingTool.Repositories
                 });
         }
 
-        private IList<ReportRow> GetCountryScopedReportRows(IList<RegionApiTarget> regionUrls, DashboardRequest request)
+        private IList<ReportRow> GetCountryScopedReportRows(
+            IList<RegionApiTarget> regionUrls,
+            DashboardRequest request,
+            Func<IList<RegionApiTarget>, DashboardRequest, bool, ReportFetchResult> fetchRows)
         {
             var rows = new List<ReportRow>();
             var regionName = GetPrimaryRegionName(regionUrls);
@@ -522,7 +528,7 @@ namespace VASReportingTool.Repositories
                 var countryRequest = CloneDashboardRequest(request);
                 countryRequest.Country = requestedCountry;
                 rows.AddRange(
-                    FetchReportRows(filterTargets, countryRequest, true)
+                    fetchRows(filterTargets, countryRequest, true)
                         .Rows
                         .Where(row => MatchesTextFilter(row.Country, requestedCountry)));
             }
@@ -603,8 +609,15 @@ namespace VASReportingTool.Repositories
                 OperatorName = request.OperatorName,
                 ServiceName = request.ServiceName,
                 FromDate = request.FromDate,
-                ToDate = request.ToDate
+                ToDate = request.ToDate,
+                ViewMode = request.ViewMode
             };
+        }
+
+        private static bool IsHourlyRequest(DashboardRequest request)
+        {
+            return request != null &&
+                   string.Equals(request.ViewMode, "Hourly", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string GetPrimaryRegionName(IList<RegionApiTarget> regionUrls)
@@ -731,13 +744,93 @@ namespace VASReportingTool.Repositories
 
         private ReportFetchResult FetchReportRows(IList<RegionApiTarget> regionUrls, DashboardRequest request, bool requireAvailability)
         {
+            return FetchReportRowsCore(
+                regionUrls,
+                request,
+                requireAvailability,
+                "dashboard data",
+                BuildDashboardRequestUrl,
+                (map, regionUrl, country) => new ReportRow
+                {
+                    ReportDate = ReadDate(map, "date", "Date"),
+                    RegionId = regionUrl.RegionId,
+                    RegionName = regionUrl.RegionName,
+                    OperatorName = ReadString(map, "operator", "Operator"),
+                    ServiceName = ReadString(map, "service", "Service"),
+                    Country = country,
+                    ActivationSource = ReadString(map, "activationSource", "ActivationSource", "source", "Source", "activationChannel", "ActivationChannel"),
+                    ActivationCategory = ReadString(map, "activationCategory", "ActivationCategory", "activationCtg", "ActivationCtg", "ctg", "CTG", "category", "Category"),
+                    TotalVisitors = ReadInt(map, "totalVisitors", "TOTAL VISITORS"),
+                    UniqueVisitors = ReadInt(map, "uniqueVisitors", "UNIQUE VISITORS"),
+                    ActivationAttempts = ReadInt(map, "activationAttempts", "ACTIVATION ATTEMPTS"),
+                    FreeTrials = ReadInt(map, "freeTrials", "FREE TRIALS"),
+                    ActivationCount = ReadInt(map, "activationCount", "ACTIVATION COUNT", "ACTIVATION", "Activations", "activations"),
+                    ActivationRevenue = ReadDecimal(map, "activationRevenue", "ACTIVATION REVENUE"),
+                    RenewalCount = ReadInt(map, "renewalCount", "RENEWAL COUNT"),
+                    RenewalRevenue = ReadDecimal(map, "renewalRevenue", "RENEWAL REVENUE"),
+                    TotalRevenue = ReadDecimal(map, "totalRevenue", "TOTAL REVENUE"),
+                    Churn = ReadInt(map, "churn", "CHURN"),
+                    UserChurn = ReadInt(map, "userChurn", "UserChurn", "USER CHURN", "USER_INIT", "user_init", "userInit"),
+                    SystemChurn = ReadInt(map, "systemChurn", "SystemChurn", "SYSTEM CHURN", "CP_INIT", "cp_init", "cpInit"),
+                    Deactivation = ReadInt(map, "deactivation", "Deactivation", "DEACTIVATION", "PROVISION", "provision", "Provision"),
+                    GrossBase = ReadInt(map, "grossBase", "GROSS BASE"),
+                    ActiveBase = ReadInt(map, "activeBase", "ACTIVE BASE"),
+                    Hour = ReadInt(map, "hour", "Hour"),
+                    GoodBase = ReadInt(map, "goodBase", "GoodBase", "GOOD BASE", "good_base"),
+                    BadBase = ReadInt(map, "badBase", "BadBase", "BAD BASE", "bad_base")
+                });
+        }
+
+        private ReportFetchResult FetchHourlyReportRows(IList<RegionApiTarget> regionUrls, DashboardRequest request, bool requireAvailability)
+        {
+            return FetchReportRowsCore(
+                regionUrls,
+                request,
+                requireAvailability,
+                "hourly report data",
+                BuildHourlyRequestUrl,
+                (map, regionUrl, country) =>
+                {
+                    var userChurn = ReadInt(map, "userChurn", "UserChurn", "USER CHURN", "USER_INIT", "user_init", "userInit");
+                    var systemChurn = ReadInt(map, "systemChurn", "SystemChurn", "SYSTEM CHURN", "CP_INIT", "cp_init", "cpInit");
+                    return new ReportRow
+                    {
+                        ReportDate = ReadDate(map, "date", "Date"),
+                        RegionId = regionUrl.RegionId,
+                        RegionName = regionUrl.RegionName,
+                        OperatorName = ReadString(map, "operator", "Operator"),
+                        ServiceName = ReadString(map, "service", "Service"),
+                        Country = country,
+                        FreeTrials = ReadInt(map, "activationFree", "ActivationFree", "FREE ACTIVATIONS", "free_activations"),
+                        ActivationCount = ReadInt(map, "activationPaid", "ActivationPaid", "PAID ACTIVATIONS", "paid_activations"),
+                        RenewalCount = ReadInt(map, "renewalCount", "RenewalCount"),
+                        RenewalRevenue = ReadDecimal(map, "renewalRevenue", "RenewalRevenue"),
+                        TotalRevenue = ReadDecimal(map, "totalRevenue", "TotalRevenue"),
+                        Churn = userChurn + systemChurn,
+                        UserChurn = userChurn,
+                        SystemChurn = systemChurn,
+                        Hour = ReadInt(map, "hour", "Hour"),
+                        GoodBase = ReadInt(map, "goodBase", "GoodBase", "GOOD BASE", "good_base"),
+                        BadBase = ReadInt(map, "badBase", "BadBase", "BAD BASE", "bad_base")
+                    };
+                });
+        }
+
+        private ReportFetchResult FetchReportRowsCore(
+            IList<RegionApiTarget> regionUrls,
+            DashboardRequest request,
+            bool requireAvailability,
+            string operationLabel,
+            Func<string, DashboardRequest, string> requestUrlBuilder,
+            Func<IDictionary<string, object>, RegionApiTarget, string, ReportRow> rowFactory)
+        {
             var rows = new List<ReportRow>();
             var failures = new List<string>();
             var hasSuccessfulResponse = false;
 
             foreach (var regionUrl in regionUrls)
             {
-                var requestUrl = BuildDashboardRequestUrl(regionUrl.Url, request);
+                var requestUrl = requestUrlBuilder(regionUrl.Url, request);
                 try
                 {
                     var payload = GetJson(requestUrl);
@@ -764,43 +857,22 @@ namespace VASReportingTool.Repositories
                             continue;
                         }
 
-                        rows.Add(new ReportRow
+                        var row = rowFactory(map, regionUrl, country);
+                        if (row != null)
                         {
-                            ReportDate = ReadDate(map, "date", "Date"),
-                            RegionId = regionUrl.RegionId,
-                            RegionName = regionUrl.RegionName,
-                            OperatorName = ReadString(map, "operator", "Operator"),
-                            ServiceName = ReadString(map, "service", "Service"),
-                            Country = country,
-                            ActivationSource = ReadString(map, "activationSource", "ActivationSource", "source", "Source", "activationChannel", "ActivationChannel"),
-                            ActivationCategory = ReadString(map, "activationCategory", "ActivationCategory", "activationCtg", "ActivationCtg", "ctg", "CTG", "category", "Category"),
-                            TotalVisitors = ReadInt(map, "totalVisitors", "TOTAL VISITORS"),
-                            UniqueVisitors = ReadInt(map, "uniqueVisitors", "UNIQUE VISITORS"),
-                            ActivationAttempts = ReadInt(map, "activationAttempts", "ACTIVATION ATTEMPTS"),
-                            FreeTrials = ReadInt(map, "freeTrials", "FREE TRIALS"),
-                            ActivationCount = ReadInt(map, "activationCount", "ACTIVATION COUNT", "ACTIVATION", "Activations", "activations"),
-                            ActivationRevenue = ReadDecimal(map, "activationRevenue", "ACTIVATION REVENUE"),
-                            RenewalCount = ReadInt(map, "renewalCount", "RENEWAL COUNT"),
-                            RenewalRevenue = ReadDecimal(map, "renewalRevenue", "RENEWAL REVENUE"),
-                            TotalRevenue = ReadDecimal(map, "totalRevenue", "TOTAL REVENUE"),
-                            Churn = ReadInt(map, "churn", "CHURN"),
-                            UserChurn = ReadInt(map, "userChurn", "UserChurn", "USER CHURN", "USER_INIT", "user_init", "userInit"),
-                            SystemChurn = ReadInt(map, "systemChurn", "SystemChurn", "SYSTEM CHURN", "CP_INIT", "cp_init", "cpInit"),
-                            Deactivation = ReadInt(map, "deactivation", "Deactivation", "DEACTIVATION", "PROVISION", "provision", "Provision"),
-                            GrossBase = ReadInt(map, "grossBase", "GROSS BASE"),
-                            ActiveBase = ReadInt(map, "activeBase", "ACTIVE BASE")
-                        });
+                            rows.Add(row);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    TrackRegionApiFailure("dashboard data", regionUrl, requestUrl, ex, failures);
+                    TrackRegionApiFailure(operationLabel, regionUrl, requestUrl, ex, failures);
                 }
             }
 
             if (requireAvailability)
             {
-                EnsureRegionApiAvailability("dashboard data", request.RegionId, regionUrls, failures, hasSuccessfulResponse);
+                EnsureRegionApiAvailability(operationLabel, request.RegionId, regionUrls, failures, hasSuccessfulResponse);
             }
 
             return new ReportFetchResult
@@ -826,7 +898,18 @@ namespace VASReportingTool.Repositories
 
         private static string BuildDashboardRequestUrl(string baseUrl, DashboardRequest request)
         {
-            var builder = new StringBuilder(BuildRegionApiUrl(baseUrl, "report/dashboard"));
+            return BuildReportRequestUrl(baseUrl, request, "report/dashboard");
+        }
+
+        private static string BuildHourlyRequestUrl(string baseUrl, DashboardRequest request)
+        {
+            return BuildReportRequestUrl(baseUrl, request, "report/hourly");
+        }
+
+        private static string BuildReportRequestUrl(string baseUrl, DashboardRequest request, string relativePath)
+        {
+            request = request ?? new DashboardRequest();
+            var builder = new StringBuilder(BuildRegionApiUrl(baseUrl, relativePath));
             builder.Append("?");
             var parameters = new List<string>();
             if (!string.IsNullOrWhiteSpace(request.Country))
@@ -1597,6 +1680,5 @@ namespace VASReportingTool.Repositories
         }
     }
 }
-
 
 

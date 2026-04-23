@@ -26,6 +26,9 @@
                 </div>
                 <div class="btn-row">
                     <a class="ghost-btn" href="@Url.Action("Index", "Dashboard")">Reports</a>
+                    <a class="ghost-btn" href="@Url.Action("Index", "ToolSummary")">Tool Summary</a>
+                    <a class="ghost-btn" href="@Url.Action("Hourly", "ToolSummary")">Hourly</a>
+                    <a class="ghost-btn" href="@Url.Action("ArpuData", "ToolSummary")">ARPU Data</a>
                     @if (User.IsInRole("Admin"))
                     {
                         <a class="ghost-btn" href="@Url.Action("Index", "Admin")">Admin</a>
@@ -55,7 +58,7 @@
 
         <script>
             (function () {
-                var TIMEOUT_MS   = 45 * 60 * 1000;   // 45 minutes (must match Web.config)
+                var TIMEOUT_MS   = 175 * 60 * 1000;  // 175 minutes idle before warning (matches 180-min server session)
                 var WARN_BEFORE  =  5 * 60 * 1000;   // show warning 5 min before expiry
                 var logoutUrl    = '@Url.Action("Logout", "Account")';
                 var csrfToken    = '@Html.AntiForgeryToken()'.match(/value="([^"]+)"/);
@@ -121,6 +124,13 @@
                 ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(function (evt) {
                     document.addEventListener(evt, resetTimer, { passive: true });
                 });
+
+                // Ping server every 30 min to keep session alive during long active use
+                setInterval(function () {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('GET', '@Url.Action("KeepAlive", "Account")', true);
+                    xhr.send();
+                }, 30 * 60 * 1000);
 
                 resetTimer();
             })();

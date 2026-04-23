@@ -1,0 +1,568 @@
+@model VASReportingTool.Models.DashboardViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Hourly Comparison";
+}
+
+<style>
+    .hc-tab {
+        padding: 10px 22px;
+        background: none;
+        border: none;
+        border-bottom: 3px solid transparent;
+        font-size: 13px;
+        font-weight: 600;
+        color: #6b7280;
+        cursor: pointer;
+        font-family: inherit;
+        transition: color .15s, border-color .15s;
+    }
+    .hc-tab:hover { color: #111827; }
+    .hc-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .hc-badge {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .hc-ok   { background: #dcfce7; color: #15803d; }
+    .hc-warn { background: #fef3c7; color: #92400e; }
+    .hc-crit { background: #fee2e2; color: #b91c1c; }
+    .hc-neut { background: #f3f4f6; color: #6b7280; }
+    .hc-today { font-weight: 700; color: #111827; }
+    .hc-comp  { color: #6b7280; }
+    .hc-remark { font-size: 11px; color: #6b7280; white-space: nowrap; }
+    .hc-good-pill { background: #dcfce7; color: #15803d; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+    .hc-bad-pill  { background: #fee2e2; color: #b91c1c; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+    @@keyframes hc-spin { to { transform: rotate(360deg); } }
+</style>
+
+<div class="container" style="padding-top:24px;padding-bottom:40px;">
+
+    <div class="page-actions" style="margin-bottom:18px;">
+        <div>
+            <h1 class="section-title" style="margin-bottom:2px;">Hourly Comparison</h1>
+            <div id="hc-dateband" style="font-size:12px;color:#6b7280;font-family:'IBM Plex Mono',monospace;">
+                Today vs Yesterday vs 7-Day Average
+            </div>
+        </div>
+        <div class="btn-row">
+            <a class="ghost-btn" href="@Url.Action("Index","ToolSummary")">Tool Summary</a>
+            <a class="ghost-btn" href="@Url.Action("Index","Dashboard")">Reports</a>
+        </div>
+    </div>
+
+    <div class="card" style="padding:20px 24px;margin-bottom:0;border-radius:12px 12px 0 0;border-bottom:1px solid #e5e7eb;">
+        <div style="margin-bottom:16px;">
+            <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Region</div>
+            <div id="hc-region-chips" style="display:flex;flex-wrap:wrap;gap:8px;">
+                @foreach (var r in Model.Regions)
+                {
+                    <button type="button" class="region-chip" data-region-id="@r.RegionId">@r.Name</button>
+                }
+            </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Country</label>
+                <select id="hc-country" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All countries</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Operator</label>
+                <select id="hc-operator" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All operators</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Service</label>
+                <select id="hc-service" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All services</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Hour</label>
+                <select id="hc-hour" class="filter-select" style="min-width:140px;" disabled>
+                    <option value="">Latest available hour</option>
+                </select>
+            </div>
+            <button id="hc-load" class="primary-btn" disabled style="height:36px;">Load Comparison</button>
+        </div>
+    </div>
+
+    <div style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;background:#fff;border-radius:0;padding:0 8px;">
+        <button class="hc-tab active" data-tab="revenue">Revenue</button>
+        <button class="hc-tab" data-tab="activation">Activation</button>
+        <button class="hc-tab" data-tab="churn">Churn</button>
+        <button class="hc-tab" data-tab="retry">Retry Bucket</button>
+    </div>
+
+    <div class="report-table-card card" style="border-radius:0 0 12px 12px;border-top:none;min-height:200px;">
+        <div id="hc-loading" style="display:none;padding:56px;text-align:center;">
+            <div style="display:inline-block;width:40px;height:40px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:hc-spin .8s linear infinite;"></div>
+            <div style="margin-top:14px;color:#6b7280;font-size:13px;">Fetching hourly data (today / yesterday / 7-day average)...</div>
+        </div>
+        <div id="hc-error" style="display:none;padding:32px;text-align:center;color:#dc2626;font-size:14px;"></div>
+        <div id="hc-prompt" style="padding:48px;text-align:center;color:#9ca3af;font-size:14px;">
+            Select a region above, then click <strong>Load Comparison</strong>.
+        </div>
+        <div id="hc-empty" style="display:none;padding:48px;text-align:center;color:#9ca3af;font-size:14px;">No hourly data found for the selected filters.</div>
+        <div id="hc-wrap" style="display:none;overflow-x:auto;max-height:680px;overflow-y:auto;">
+            <table class="report-table" id="hc-table">
+                <thead id="hc-thead"></thead>
+                <tbody id="hc-tbody"></tbody>
+            </table>
+        </div>
+        <div id="hc-foot" style="display:none;padding:8px 16px 10px;font-size:12px;color:#9ca3af;justify-content:space-between;flex-wrap:wrap;gap:4px;">
+            <span id="hc-legend">
+                <span class="hc-badge hc-ok">OK</span> <= 5% drop
+                <span class="hc-badge hc-warn" style="margin-left:8px;">WARN</span> 5% to 20% drop
+                <span class="hc-badge hc-crit" style="margin-left:8px;">LOW</span> > 20% drop
+            </span>
+            <span id="hc-count"></span>
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function () {
+    var selectedRegionId = null;
+    var selectedHour = '';
+    var allData = [];
+    var activeTab = 'revenue';
+
+    var countriesUrl = '@Url.Content("~/api/regions/countries")';
+    var operatorsUrl = '@Url.Content("~/api/regions/operators")';
+    var servicesUrl = '@Url.Content("~/api/regions/services")';
+    var hourlyDataUrl = '@Url.Action("HourlyData", "ToolSummary")';
+
+    document.querySelectorAll('.hc-tab').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.hc-tab').forEach(function (b) { b.classList.remove('active'); });
+            this.classList.add('active');
+            activeTab = this.dataset.tab;
+            if (allData.length) {
+                renderTable();
+            }
+        });
+    });
+
+    document.getElementById('hc-region-chips').addEventListener('click', function (e) {
+        var chip = e.target.closest('.region-chip');
+        if (!chip) {
+            return;
+        }
+
+        document.querySelectorAll('#hc-region-chips .region-chip').forEach(function (c) { c.classList.remove('active'); });
+        chip.classList.add('active');
+        selectedRegionId = chip.dataset.regionId;
+        resetSel('hc-country', 'Loading...');
+        resetSel('hc-operator', 'All operators');
+        resetSel('hc-service', 'All services');
+        resetHourSel();
+        loadCountries();
+    });
+
+    document.getElementById('hc-country').addEventListener('change', function () {
+        resetSel('hc-operator', 'All operators');
+        resetSel('hc-service', 'All services');
+        resetHourSel();
+
+        var country = this.value;
+        if (!country || !selectedRegionId) {
+            return;
+        }
+
+        var sel = document.getElementById('hc-operator');
+        sel.innerHTML = '<option value="">Loading...</option>';
+        sel.disabled = true;
+        fetch(operatorsUrl + '?regionId=' + selectedRegionId + '&country=' + encodeURIComponent(country))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { populateSel('hc-operator', Array.isArray(data) ? data : [], 'All operators'); })
+            .catch(function () { populateSel('hc-operator', [], 'All operators'); });
+    });
+
+    document.getElementById('hc-operator').addEventListener('change', function () {
+        resetSel('hc-service', 'All services');
+        resetHourSel();
+
+        var country = document.getElementById('hc-country').value;
+        var operator = this.value;
+        if (!operator || !selectedRegionId) {
+            return;
+        }
+
+        var sel = document.getElementById('hc-service');
+        sel.innerHTML = '<option value="">Loading...</option>';
+        sel.disabled = true;
+        fetch(servicesUrl + '?regionId=' + selectedRegionId + '&country=' + encodeURIComponent(country) + '&operatorName=' + encodeURIComponent(operator))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { populateSel('hc-service', Array.isArray(data) ? data : [], 'All services'); })
+            .catch(function () { populateSel('hc-service', [], 'All services'); });
+    });
+
+    document.getElementById('hc-service').addEventListener('change', function () {
+        resetHourSel();
+    });
+
+    document.getElementById('hc-hour').addEventListener('change', function () {
+        selectedHour = this.value;
+        if (allData.length) {
+            renderTable();
+        }
+    });
+
+    document.getElementById('hc-load').addEventListener('click', function () {
+        if (!selectedRegionId) {
+            return;
+        }
+
+        var country = document.getElementById('hc-country').value;
+        var operator = document.getElementById('hc-operator').value;
+        var service = document.getElementById('hc-service').value;
+
+        setState('loading');
+
+        var url = hourlyDataUrl + '?regionId=' + selectedRegionId;
+        if (country) {
+            url += '&country=' + encodeURIComponent(country);
+        }
+        if (operator) {
+            url += '&operatorName=' + encodeURIComponent(operator);
+        }
+        if (service) {
+            url += '&serviceName=' + encodeURIComponent(service);
+        }
+
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) {
+                    setState('error', data.error);
+                    return;
+                }
+
+                allData = data.Rows || [];
+                populateHourSel(data.AvailableHours || [], data.CurrentHour);
+
+                if (data.Date) {
+                    var datebandParts = [
+                        'Today: ' + data.Date,
+                        'Yesterday: ' + data.Yesterday,
+                        '7-Day avg from: ' + data.Days7From
+                    ];
+                    if (typeof data.CurrentHour === 'number' && data.CurrentHour >= 0) {
+                        datebandParts.push('Latest hour: ' + hourLabel(data.CurrentHour));
+                    }
+                    document.getElementById('hc-dateband').textContent = datebandParts.join(' | ');
+                }
+
+                renderTable();
+            })
+            .catch(function () {
+                setState('error', 'Failed to load data. Please try again.');
+            });
+    });
+
+    var TABS = {
+        revenue: {
+            heads: ['Country', 'Operator', 'Service', 'Hour', "Today's Revenue", "Yesterday's Revenue", '7-Day Avg Revenue', 'Status', 'Remark'],
+            cells: function (r) {
+                var si = statusInfo(r.TodayRev, r.YestRev, false);
+                return [
+                    td(esc(r.Country)),
+                    td(esc(r.Operator)),
+                    td(esc(r.Service)),
+                    tdC(hourLabel(r.Hour)),
+                    tdR('<span class="hc-today">' + fmt(r.TodayRev) + '</span>'),
+                    tdR('<span class="hc-comp">' + fmt(r.YestRev) + '</span>'),
+                    tdR('<span class="hc-comp">' + fmt(r.Avg7Rev) + '</span>'),
+                    tdC(badge(si.status)),
+                    td('<span class="hc-remark">' + esc(si.remark) + '</span>')
+                ].join('');
+            }
+        },
+        activation: {
+            heads: ['Country', 'Operator', 'Service', 'Hour', "Today's Activation", "Yesterday's Activation", '7-Day Avg Activation', 'Status', 'Remark'],
+            cells: function (r) {
+                var si = statusInfo(r.TodayActiv, r.YestActiv, false);
+                return [
+                    td(esc(r.Country)),
+                    td(esc(r.Operator)),
+                    td(esc(r.Service)),
+                    tdC(hourLabel(r.Hour)),
+                    tdR('<span class="hc-today">' + fmt(r.TodayActiv) + '</span>'),
+                    tdR('<span class="hc-comp">' + fmt(r.YestActiv) + '</span>'),
+                    tdR('<span class="hc-comp">' + fmt(r.Avg7Activ) + '</span>'),
+                    tdC(badge(si.status)),
+                    td('<span class="hc-remark">' + esc(si.remark) + '</span>')
+                ].join('');
+            }
+        },
+        churn: {
+            heads: ['Country', 'Operator', 'Service', 'Hour', "Today's Churn", "Yesterday's Churn", '7-Day Avg Churn', 'Status', 'Remark'],
+            cells: function (r) {
+                var si = statusInfo(r.TodayChurn, r.YestChurn, true);
+                return [
+                    td(esc(r.Country)),
+                    td(esc(r.Operator)),
+                    td(esc(r.Service)),
+                    tdC(hourLabel(r.Hour)),
+                    tdR('<span class="hc-today">' + fmt(r.TodayChurn) + '</span>'),
+                    tdR('<span class="hc-comp">' + fmt(r.YestChurn) + '</span>'),
+                    tdR('<span class="hc-comp">' + fmt(r.Avg7Churn) + '</span>'),
+                    tdC(badge(si.status)),
+                    td('<span class="hc-remark">' + esc(si.remark) + '</span>')
+                ].join('');
+            }
+        },
+        retry: {
+            heads: ['Country', 'Operator', 'Service', 'Hour', 'Type', "Today's Count", "Yesterday's Count", '7-Day Avg Count', 'Status', 'Remark'],
+            cells: function (r) {
+                var sgood = statusInfo(r.TodayGood, r.YestGood, false);
+                var sbad = statusInfo(r.TodayBad, r.YestBad, true);
+                var common = td(esc(r.Country)) + td(esc(r.Operator)) + td(esc(r.Service)) + tdC(hourLabel(r.Hour));
+                return [
+                    common
+                        + tdC('<span class="hc-good-pill">Good Base</span>')
+                        + tdR('<span class="hc-today">' + fmt(r.TodayGood) + '</span>')
+                        + tdR('<span class="hc-comp">' + fmt(r.YestGood) + '</span>')
+                        + tdR('<span class="hc-comp">' + fmt(r.Avg7Good) + '</span>')
+                        + tdC(badge(sgood.status))
+                        + td('<span class="hc-remark">' + esc(sgood.remark) + '</span>'),
+                    common
+                        + tdC('<span class="hc-bad-pill">Bad Base</span>')
+                        + tdR('<span class="hc-today">' + fmt(r.TodayBad) + '</span>')
+                        + tdR('<span class="hc-comp">' + fmt(r.YestBad) + '</span>')
+                        + tdR('<span class="hc-comp">' + fmt(r.Avg7Bad) + '</span>')
+                        + tdC(badge(sbad.status))
+                        + td('<span class="hc-remark">' + esc(sbad.remark) + '</span>')
+                ];
+            }
+        }
+    };
+
+    function loadCountries() {
+        var sel = document.getElementById('hc-country');
+        sel.innerHTML = '<option value="">Loading...</option>';
+        sel.disabled = true;
+        document.getElementById('hc-load').disabled = true;
+
+        fetch(countriesUrl + '?regionId=' + selectedRegionId)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                populateSel('hc-country', Array.isArray(data) ? data : [], 'All countries');
+                document.getElementById('hc-load').disabled = false;
+            })
+            .catch(function () {
+                populateSel('hc-country', [], 'All countries');
+                document.getElementById('hc-load').disabled = false;
+            });
+    }
+
+    function resetSel(id, placeholder) {
+        var el = document.getElementById(id);
+        el.innerHTML = '<option value="">' + placeholder + '</option>';
+        el.disabled = true;
+    }
+
+    function resetHourSel() {
+        var el = document.getElementById('hc-hour');
+        selectedHour = '';
+        el.innerHTML = '<option value="">Latest available hour</option>';
+        el.disabled = true;
+    }
+
+    function populateSel(id, items, placeholder) {
+        var sel = document.getElementById(id);
+        sel.innerHTML = '<option value="">' + placeholder + '</option>';
+        items.forEach(function (v) {
+            var o = document.createElement('option');
+            o.value = v;
+            o.textContent = v;
+            sel.appendChild(o);
+        });
+        sel.disabled = false;
+    }
+
+    function populateHourSel(hours, currentHour) {
+        var sel = document.getElementById('hc-hour');
+        var normalizedHours = (Array.isArray(hours) ? hours : [])
+            .map(function (h) { return Number(h); })
+            .filter(function (h) { return !isNaN(h) && h >= 0; })
+            .sort(function (a, b) { return a - b; });
+
+        sel.innerHTML = '<option value="">All hours</option>';
+        normalizedHours.forEach(function (hour) {
+            var option = document.createElement('option');
+            option.value = String(hour);
+            option.textContent = hourLabel(hour);
+            sel.appendChild(option);
+        });
+
+        if (!normalizedHours.length) {
+            sel.disabled = true;
+            selectedHour = '';
+            return;
+        }
+
+        sel.disabled = false;
+        var defaultHour = normalizedHours.indexOf(Number(currentHour)) >= 0
+            ? Number(currentHour)
+            : normalizedHours[normalizedHours.length - 1];
+
+        selectedHour = String(defaultHour);
+        sel.value = selectedHour;
+    }
+
+    function renderTable() {
+        var tab = TABS[activeTab];
+        if (!tab) {
+            return;
+        }
+
+        var visibleData = getVisibleData();
+        if (!visibleData.length) {
+            document.getElementById('hc-empty').textContent = selectedHour === ''
+                ? 'No hourly data found for the selected filters.'
+                : 'No hourly data found for ' + hourLabel(selectedHour) + ' and the selected filters.';
+            document.getElementById('hc-count').textContent = '0 rows';
+            setState('empty');
+            return;
+        }
+
+        var hHtml = '<tr><th style="width:28px;color:#9ca3af;">#</th>';
+        tab.heads.forEach(function (h) { hHtml += '<th>' + h + '</th>'; });
+        hHtml += '</tr>';
+        document.getElementById('hc-thead').innerHTML = hHtml;
+
+        var html = '';
+        var idx = 0;
+        visibleData.forEach(function (r) {
+            var cells = tab.cells(r);
+            if (Array.isArray(cells)) {
+                cells.forEach(function (c) {
+                    idx++;
+                    html += '<tr><td style="color:#9ca3af;font-size:11px;">' + idx + '</td>' + c + '</tr>';
+                });
+            } else {
+                idx++;
+                html += '<tr><td style="color:#9ca3af;font-size:11px;">' + idx + '</td>' + cells + '</tr>';
+            }
+        });
+
+        document.getElementById('hc-tbody').innerHTML = html;
+        document.getElementById('hc-count').textContent = idx + ' row' + (idx !== 1 ? 's' : '');
+        setState('data');
+    }
+
+    function getVisibleData() {
+        if (!allData.length) {
+            return [];
+        }
+
+        if (selectedHour === '') {
+            return allData;
+        }
+
+        var selectedHourNumber = Number(selectedHour);
+        return allData.filter(function (row) { return Number(row.Hour) === selectedHourNumber; });
+    }
+
+    function setState(state, msg) {
+        document.getElementById('hc-loading').style.display = state === 'loading' ? 'block' : 'none';
+        document.getElementById('hc-error').style.display = state === 'error' ? 'block' : 'none';
+        document.getElementById('hc-prompt').style.display = state === 'prompt' ? 'block' : 'none';
+        document.getElementById('hc-empty').style.display = state === 'empty' ? 'block' : 'none';
+        document.getElementById('hc-wrap').style.display = state === 'data' ? 'block' : 'none';
+        document.getElementById('hc-foot').style.display = state === 'data' ? 'flex' : 'none';
+        if (state === 'error' && msg) {
+            document.getElementById('hc-error').textContent = msg;
+        }
+    }
+
+    function statusInfo(today, yest, inverted) {
+        today = Number(today) || 0;
+        yest = Number(yest) || 0;
+
+        if (yest === 0 && today === 0) {
+            return { status: 'neut', remark: '-' };
+        }
+        if (yest === 0) {
+            return { status: 'neut', remark: 'No yesterday data' };
+        }
+        if (today === 0) {
+            return { status: 'crit', remark: 'No today data' };
+        }
+
+        var pct = (today - yest) / Math.abs(yest) * 100;
+        var absPct = Math.abs(pct).toFixed(1);
+        var dir = pct >= 0 ? '+' : '-';
+
+        var status;
+        if (inverted) {
+            if (pct > 20) {
+                status = 'crit';
+            } else if (pct > 5) {
+                status = 'warn';
+            } else {
+                status = 'ok';
+            }
+        } else {
+            if (pct < -20) {
+                status = 'crit';
+            } else if (pct < -5) {
+                status = 'warn';
+            } else {
+                status = 'ok';
+            }
+        }
+
+        if (Math.abs(pct) < 1) {
+            return { status: status, remark: 'Same as yesterday' };
+        }
+
+        return { status: status, remark: dir + absPct + '% vs yesterday' };
+    }
+
+    function badge(status) {
+        var cfg = {
+            ok: { cls: 'hc-ok', label: 'OK' },
+            warn: { cls: 'hc-warn', label: 'WARN' },
+            crit: { cls: 'hc-crit', label: 'LOW' },
+            neut: { cls: 'hc-neut', label: 'N/A' }
+        }[status] || { cls: 'hc-neut', label: 'N/A' };
+
+        return '<span class="hc-badge ' + cfg.cls + '">' + cfg.label + '</span>';
+    }
+
+    function hourLabel(hour) {
+        var h = Number(hour);
+        if (isNaN(h) || h < 0) {
+            return '-';
+        }
+
+        var hh = h < 10 ? '0' + h : String(h);
+        return hh + ':00';
+    }
+
+    function fmt(n) {
+        return Math.round(Number(n) || 0).toLocaleString();
+    }
+
+    function esc(s) {
+        return (s == null ? '-' : String(s))
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function td(inner) { return '<td>' + inner + '</td>'; }
+    function tdR(inner) { return '<td style="text-align:right;">' + inner + '</td>'; }
+    function tdC(inner) { return '<td style="text-align:center;">' + inner + '</td>'; }
+})();
+</script>

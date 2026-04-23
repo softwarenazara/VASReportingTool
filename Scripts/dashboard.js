@@ -1929,6 +1929,8 @@
             summary.FreeTrials += row.FreeTrials;
             summary.TotalActivations += row.TotalActivations;
             summary.Churn += row.Churn;
+            summary.UserChurn += row.UserChurn;
+            summary.SystemChurn += row.SystemChurn;
             summary.GrossBase = row.GrossBase;
             summary.ActiveBase = row.ActiveBase;
             return summary;
@@ -1943,6 +1945,8 @@
             FreeTrials: 0,
             TotalActivations: 0,
             Churn: 0,
+            UserChurn: 0,
+            SystemChurn: 0,
             GrossBase: 0,
             ActiveBase: 0
         });
