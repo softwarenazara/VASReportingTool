@@ -239,6 +239,10 @@ namespace VASReportingTool.Controllers
                         TodayActiv = t != null ? t.Activation : 0,
                         YestActiv  = y != null ? y.Activation  : 0,
                         Avg7Activ  = s != null ? (int)Math.Round((double)s.Activation / distinctDays) : 0,
+                        // Renewal Count
+                        TodayRenewal = t != null ? t.Renewal : 0,
+                        YestRenewal  = y != null ? y.Renewal  : 0,
+                        Avg7Renewal  = s != null ? (int)Math.Round((double)s.Renewal / distinctDays) : 0,
                         // Churn (User + System)
                         TodayChurn = t != null ? t.Churn      : 0,
                         YestChurn  = y != null ? y.Churn       : 0,
@@ -313,6 +317,7 @@ namespace VASReportingTool.Controllers
                 }
                 agg.Revenue    += row.TotalRevenue;
                 agg.Activation += row.FreeTrials + row.ActivationCount;
+                agg.Renewal    += row.RenewalCount;
                 agg.Churn      += row.UserChurn + row.SystemChurn;
                 agg.GoodBase   += row.GoodBase;
                 agg.BadBase    += row.BadBase;
@@ -324,6 +329,7 @@ namespace VASReportingTool.Controllers
         {
             public decimal Revenue    { get; set; }
             public int     Activation { get; set; }
+            public int     Renewal    { get; set; }
             public int     Churn      { get; set; }
             public int     GoodBase   { get; set; }
             public int     BadBase    { get; set; }

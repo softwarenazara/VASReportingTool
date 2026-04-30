@@ -52,7 +52,7 @@
             </div>
         </div>
         <div class="btn-row">
-            <a class="ghost-btn" href="@Url.Action("Index","ToolSummary")">Tool Summary</a>
+            <a class="ghost-btn" href="@Url.Action("Index","ToolSummary")">MissingReports</a>
             <a class="ghost-btn" href="@Url.Action("Index","Dashboard")">Reports</a>
         </div>
     </div>
@@ -96,11 +96,15 @@
         </div>
     </div>
 
-    <div style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;background:#fff;border-radius:0;padding:0 8px;">
-        <button class="hc-tab active" data-tab="revenue">Revenue</button>
-        <button class="hc-tab" data-tab="activation">Activation</button>
-        <button class="hc-tab" data-tab="churn">Churn</button>
-        <button class="hc-tab" data-tab="retry">Retry Bucket</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #e5e7eb;background:#fff;border-radius:0;padding:0 8px;">
+        <div style="display:flex;gap:0;">
+            <button class="hc-tab active" data-tab="revenue">Revenue</button>
+            <button class="hc-tab" data-tab="activation">Activation</button>
+            <button class="hc-tab" data-tab="churn">Churn</button>
+            <button class="hc-tab" data-tab="retry">Retry Bucket</button>
+        </div>
+        <input id="hc-search" type="text" placeholder="Search (comma-separated: Country,Operator,Service)"
+               style="padding:5px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;width:280px;outline:none;" />
     </div>
 
     <div class="report-table-card card" style="border-radius:0 0 12px 12px;border-top:none;min-height:200px;">
@@ -154,6 +158,10 @@
         });
     });
 
+    document.getElementById('hc-search').addEventListener('input', function () {
+        if (allData.length) { renderTable(); }
+    });
+
     document.getElementById('hc-region-chips').addEventListener('click', function (e) {
         var chip = e.target.closest('.region-chip');
         if (!chip) {
@@ -163,6 +171,18 @@
         document.querySelectorAll('#hc-region-chips .region-chip').forEach(function (c) { c.classList.remove('active'); });
         chip.classList.add('active');
         selectedRegionId = chip.dataset.regionId;
+        var regionName = chip.textContent.trim();
+        var retryTab = document.querySelector('.hc-tab[data-tab="retry"]');
+        if (regionName === 'APAC' || regionName === 'MENA') {
+            retryTab.style.display = 'none';
+            if (activeTab === 'retry') {
+                activeTab = 'revenue';
+                document.querySelectorAll('.hc-tab').forEach(function (b) { b.classList.remove('active'); });
+                document.querySelector('.hc-tab[data-tab="revenue"]').classList.add('active');
+            }
+        } else {
+            retryTab.style.display = '';
+        }
         resetSel('hc-country', 'Loading...');
         resetSel('hc-operator', 'All operators');
         resetSel('hc-service', 'All services');
@@ -224,6 +244,7 @@
             return;
         }
 
+        document.getElementById('hc-search').value = '';
         var country = document.getElementById('hc-country').value;
         var operator = document.getElementById('hc-operator').value;
         var service = document.getElementById('hc-service').value;
@@ -273,17 +294,18 @@
 
     var TABS = {
         revenue: {
-            heads: ['Country', 'Operator', 'Service', 'Hour', "Today's Revenue", "Yesterday's Revenue", '7-Day Avg Revenue', 'Status', 'Remark'],
+            heads: ['Country', 'Operator', 'Service', 'Hour', "Today's Revenue / Count", "Yesterday's Revenue / Count", '7-Day Avg Revenue / Count', 'Status', 'Remark'],
             cells: function (r) {
-                var si = statusInfo(r.TodayRev, r.YestRev, false);
+                var si  = statusInfo(r.TodayRev, r.YestRev, false);
+                var sep = '<span style="color:#9ca3af;margin:0 5px;">|</span>';
                 return [
                     td(esc(r.Country)),
                     td(esc(r.Operator)),
                     td(esc(r.Service)),
                     tdC(hourLabel(r.Hour)),
-                    tdR('<span class="hc-today">' + fmt(r.TodayRev) + '</span>'),
-                    tdR('<span class="hc-comp">' + fmt(r.YestRev) + '</span>'),
-                    tdR('<span class="hc-comp">' + fmt(r.Avg7Rev) + '</span>'),
+                    tdR('<span class="hc-today">' + fmt(r.TodayRev) + '</span>' + sep + '<span class="hc-comp">' + fmt(r.TodayRenewal) + '</span>'),
+                    tdR('<span class="hc-comp">'  + fmt(r.YestRev)  + '</span>' + sep + '<span class="hc-comp">' + fmt(r.YestRenewal)  + '</span>'),
+                    tdR('<span class="hc-comp">'  + fmt(r.Avg7Rev)  + '</span>' + sep + '<span class="hc-comp">' + fmt(r.Avg7Renewal)  + '</span>'),
                     tdC(badge(si.status)),
                     td('<span class="hc-remark">' + esc(si.remark) + '</span>')
                 ].join('');
@@ -455,6 +477,19 @@
             groupMap[k].push(r);
         });
 
+        var searchRaw = (document.getElementById('hc-search').value || '').toLowerCase();
+        var searchTerms = searchRaw.split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t.length > 0; });
+        if (searchTerms.length) {
+            groupKeys = groupKeys.filter(function (key) {
+                var parts = key.split('|||');
+                var dims = parts.join(' ').toLowerCase();
+                return searchTerms.every(function (term) { return dims.indexOf(term) >= 0; });
+            });
+        }
+        var totalGroups = groupKeys.length;
+
+        var grand = { TodayRev:0, YestRev:0, Avg7Rev:0, TodayRenewal:0, YestRenewal:0, Avg7Renewal:0, TodayActiv:0, YestActiv:0, Avg7Activ:0, TodayChurn:0, YestChurn:0, Avg7Churn:0, TodayGood:0, YestGood:0, Avg7Good:0, TodayBad:0, YestBad:0, Avg7Bad:0 };
+
         var html         = '';
         var idx          = 0;
         var groupCounter = 0;
@@ -469,29 +504,40 @@
             var cumul = {
                 Country: base.Country, Operator: base.Operator, Service: base.Service,
                 Hour: -1,
-                TodayRev: 0,  YestRev: 0,  Avg7Rev: 0,
-                TodayActiv: 0, YestActiv: 0, Avg7Activ: 0,
-                TodayChurn: 0, YestChurn: 0, Avg7Churn: 0,
-                TodayGood: 0,  YestGood: 0,  Avg7Good: 0,
-                TodayBad: 0,   YestBad: 0,   Avg7Bad: 0
+                TodayRev: 0,     YestRev: 0,     Avg7Rev: 0,
+                TodayRenewal: 0, YestRenewal: 0, Avg7Renewal: 0,
+                TodayActiv: 0,   YestActiv: 0,   Avg7Activ: 0,
+                TodayChurn: 0,   YestChurn: 0,   Avg7Churn: 0,
+                TodayGood: 0,    YestGood: 0,    Avg7Good: 0,
+                TodayBad: 0,     YestBad: 0,     Avg7Bad: 0
             };
             gRows.forEach(function (r) {
-                cumul.TodayRev   += Number(r.TodayRev)   || 0;
-                cumul.YestRev    += Number(r.YestRev)    || 0;
-                cumul.Avg7Rev    += Number(r.Avg7Rev)    || 0;
-                cumul.TodayActiv += Number(r.TodayActiv) || 0;
-                cumul.YestActiv  += Number(r.YestActiv)  || 0;
-                cumul.Avg7Activ  += Number(r.Avg7Activ)  || 0;
-                cumul.TodayChurn += Number(r.TodayChurn) || 0;
-                cumul.YestChurn  += Number(r.YestChurn)  || 0;
-                cumul.Avg7Churn  += Number(r.Avg7Churn)  || 0;
-                cumul.TodayGood  += Number(r.TodayGood)  || 0;
-                cumul.YestGood   += Number(r.YestGood)   || 0;
-                cumul.Avg7Good   += Number(r.Avg7Good)   || 0;
-                cumul.TodayBad   += Number(r.TodayBad)   || 0;
-                cumul.YestBad    += Number(r.YestBad)    || 0;
-                cumul.Avg7Bad    += Number(r.Avg7Bad)    || 0;
+                cumul.TodayRev     += Number(r.TodayRev)     || 0;
+                cumul.YestRev      += Number(r.YestRev)      || 0;
+                cumul.Avg7Rev      += Number(r.Avg7Rev)      || 0;
+                cumul.TodayRenewal += Number(r.TodayRenewal) || 0;
+                cumul.YestRenewal  += Number(r.YestRenewal)  || 0;
+                cumul.Avg7Renewal  += Number(r.Avg7Renewal)  || 0;
+                cumul.TodayActiv   += Number(r.TodayActiv)   || 0;
+                cumul.YestActiv    += Number(r.YestActiv)    || 0;
+                cumul.Avg7Activ    += Number(r.Avg7Activ)    || 0;
+                cumul.TodayChurn   += Number(r.TodayChurn)   || 0;
+                cumul.YestChurn    += Number(r.YestChurn)    || 0;
+                cumul.Avg7Churn    += Number(r.Avg7Churn)    || 0;
+                cumul.TodayGood    += Number(r.TodayGood)    || 0;
+                cumul.YestGood     += Number(r.YestGood)     || 0;
+                cumul.Avg7Good     += Number(r.Avg7Good)     || 0;
+                cumul.TodayBad     += Number(r.TodayBad)     || 0;
+                cumul.YestBad      += Number(r.YestBad)      || 0;
+                cumul.Avg7Bad      += Number(r.Avg7Bad)      || 0;
             });
+
+            grand.TodayRev     += cumul.TodayRev;     grand.YestRev     += cumul.YestRev;     grand.Avg7Rev     += cumul.Avg7Rev;
+            grand.TodayRenewal += cumul.TodayRenewal; grand.YestRenewal += cumul.YestRenewal; grand.Avg7Renewal += cumul.Avg7Renewal;
+            grand.TodayActiv   += cumul.TodayActiv;   grand.YestActiv   += cumul.YestActiv;   grand.Avg7Activ   += cumul.Avg7Activ;
+            grand.TodayChurn   += cumul.TodayChurn;   grand.YestChurn   += cumul.YestChurn;   grand.Avg7Churn   += cumul.Avg7Churn;
+            grand.TodayGood    += cumul.TodayGood;    grand.YestGood    += cumul.YestGood;    grand.Avg7Good    += cumul.Avg7Good;
+            grand.TodayBad     += cumul.TodayBad;     grand.YestBad     += cumul.YestBad;     grand.Avg7Bad     += cumul.Avg7Bad;
 
             // Toggle arrow button injected next to cumulative label
             var toggleBtn = ' <button class="hc-toggle" data-group="' + groupId + '" title="Show / hide hourly breakdown">&#9660;</button>';
@@ -531,9 +577,12 @@
 
         document.getElementById('hc-tbody').innerHTML = html;
         var rangeLabel = selectedHour !== ''
-            ? ' | Cumulative 0:00 – ' + hourLabel(Number(selectedHour))
+            ? ' | Cumulative 0:00 - ' + hourLabel(Number(selectedHour))
             : '';
-        document.getElementById('hc-count').textContent = idx + ' row' + (idx !== 1 ? 's' : '') + rangeLabel;
+        var countLabel = searchTerms.length
+            ? totalGroups + ' of ' + Object.keys(groupMap).length + ' groups match'
+            : idx + ' row' + (idx !== 1 ? 's' : '');
+        document.getElementById('hc-count').textContent = countLabel + rangeLabel;
         setState('data');
     }
 

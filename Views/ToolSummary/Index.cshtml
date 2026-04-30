@@ -1,6 +1,6 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Tool Summary";
+    ViewBag.Title = "Missing Reports";
 }
 <style>
     .ts-day-th {
@@ -40,7 +40,7 @@
 <div class="container" style="padding-top:24px;padding-bottom:40px;">
     <div class="page-actions" style="margin-bottom:16px;">
         <div>
-            <h1 class="section-title" style="margin-bottom:2px;">Tool Summary</h1>
+            <h1 class="section-title" style="margin-bottom:2px;">Missing Reports</h1>
             <div id="summary-date" style="font-size:12px;color:#6b7280;font-family:'IBM Plex Mono',monospace;"></div>
         </div>
         <div class="btn-row">
@@ -122,7 +122,7 @@
             var dayCells = '';
             (r.DayStatuses || []).forEach(function (ok, idx) {
                 var cls   = ok ? 'ts-dot-yes' : 'ts-dot-no';
-                var title = ok ? 'Generated – ' + dayDates[idx] : 'Missing – ' + dayDates[idx];
+                var title = ok ? 'Generated - ' + dayDates[idx] : 'Missing - ' + dayDates[idx];
                 dayCells += '<td class="ts-day-td"><span class="ts-dot ' + cls + '" title="' + title + '"></span></td>';
             });
 
@@ -174,7 +174,7 @@
             dayDates = data.DayDates || [];
 
             var month = monthName(data.MonthStart);
-            var range = shortDate(data.MonthStart) + ' – ' + shortDate(data.Yesterday);
+            var range = shortDate(data.MonthStart) + ' - ' + shortDate(data.Yesterday);
             document.getElementById('summary-date').textContent =
                 month + '  |  ' + range + '  |  Only services with missing reports';
 

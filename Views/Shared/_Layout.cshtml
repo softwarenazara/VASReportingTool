@@ -14,7 +14,7 @@
 </head>
 <body>
     <div class="layout-shell">
-        @if (Request.IsAuthenticated)
+        @if (Session["UserId"] != null)
         {
             <header class="topbar">
                 <div class="topbar-brand-wrap">
@@ -26,10 +26,10 @@
                 </div>
                 <div class="btn-row">
                     <a class="ghost-btn" href="@Url.Action("Index", "Dashboard")">Reports</a>
-                    <a class="ghost-btn" href="@Url.Action("Index", "ToolSummary")">Tool Summary</a>
+                    <a class="ghost-btn" href="@Url.Action("Index", "ToolSummary")">MissingReports</a>
                     <a class="ghost-btn" href="@Url.Action("Hourly", "ToolSummary")">Hourly</a>
                     <a class="ghost-btn" href="@Url.Action("ArpuData", "ToolSummary")">ARPU Data</a>
-                    @if (User.IsInRole("Admin"))
+                    @if (Convert.ToString(Session["Role"]) == "Admin")
                     {
                         <a class="ghost-btn" href="@Url.Action("Index", "Admin")">Admin</a>
                     }
@@ -44,7 +44,7 @@
         @RenderBody()
     </div>
 
-    @if (Request.IsAuthenticated)
+    @if (Session["UserId"] != null)
     {
         <!-- Session timeout warning modal -->
         <div id="session-warning" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center;">
