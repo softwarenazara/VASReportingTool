@@ -68,64 +68,49 @@ namespace VASReportingTool.Controllers
             var presence = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in monthRows)
             {
-                var hasData = row.TotalRevenue > 0 || row.ActivationCount > 0
-                           || row.RenewalCount  > 0 || row.UserChurn > 0 || row.SystemChurn > 0;
-                if (!hasData) continue;
-
                 var k = Key(row.RegionName, row.Country, row.OperatorName, row.ServiceName);
                 if (!presence.ContainsKey(k))
                     presence[k] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 presence[k].Add(row.ReportDate.Date.ToString("yyyy-MM-dd"));
             }
 
-            // Master combination list — respects region access
-            var regions = isAdmin ? _repository.GetAllRegions() : _repository.GetRegionsByUser(userId);
-            var rows2   = new List<object>();
+            // Master combination list — derived directly from monthRows (no extra API calls)
+            // Groups unique Region|Country|Operator|Service combos already returned by the bulk fetch
+            var rows2 = new List<object>();
 
-            foreach (var region in regions)
+            var combinations = monthRows
+                .GroupBy(r => Key(r.RegionName, r.Country, r.OperatorName, r.ServiceName))
+                .Select(g => g.First())
+                .OrderBy(r => r.RegionName)
+                .ThenBy(r => r.Country)
+                .ThenBy(r => r.OperatorName)
+                .ThenBy(r => r.ServiceName)
+                .ToList();
+
+            var dayDateStrings = days.Select(d => d.ToString("yyyy-MM-dd")).ToArray();
+
+            foreach (var combo in combinations)
             {
-                IList<string> countries;
-                try { countries = _repository.GetCountries(userId, region.RegionId, isAdmin); }
-                catch { continue; }
+                var k = Key(combo.RegionName, combo.Country, combo.OperatorName, combo.ServiceName);
+                HashSet<string> datesWithData;
+                presence.TryGetValue(k, out datesWithData);
 
-                foreach (var country in countries)
+                var dayStatuses = dayDateStrings
+                    .Select(d => datesWithData != null && datesWithData.Contains(d))
+                    .ToArray();
+
+                // Only include combinations that have at least one missing day
+                if (dayStatuses.Any(s => !s))
                 {
-                    IList<string> operators;
-                    try { operators = _repository.GetOperators(userId, region.RegionId, country, isAdmin); }
-                    catch { continue; }
-
-                    foreach (var op in operators)
+                    rows2.Add(new
                     {
-                        IList<string> services;
-                        try { services = _repository.GetServices(userId, region.RegionId, country, op, isAdmin); }
-                        catch { continue; }
-
-                        foreach (var svc in services)
-                        {
-                            var k = Key(region.Name, country, op, svc);
-                            HashSet<string> datesWithData;
-                            presence.TryGetValue(k, out datesWithData);
-
-                            var dayStatuses = days
-                                .Select(d => datesWithData != null
-                                    && datesWithData.Contains(d.ToString("yyyy-MM-dd")))
-                                .ToArray();
-
-                            // Only include combinations that have at least one missing day
-                            if (dayStatuses.Any(s => !s))
-                            {
-                                rows2.Add(new
-                                {
-                                    Region       = region.Name,
-                                    Country      = country,
-                                    Operator     = op,
-                                    Service      = svc,
-                                    DayStatuses  = dayStatuses,
-                                    MissingCount = dayStatuses.Count(s => !s)
-                                });
-                            }
-                        }
-                    }
+                        Region       = combo.RegionName,
+                        Country      = combo.Country,
+                        Operator     = combo.OperatorName,
+                        Service      = combo.ServiceName,
+                        DayStatuses  = dayStatuses,
+                        MissingCount = dayStatuses.Count(s => !s)
+                    });
                 }
             }
 

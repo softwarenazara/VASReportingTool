@@ -854,6 +854,7 @@ body {
     color: var(--text-soft);
     position: sticky;
     top: 0;
+    z-index: 2;
     background: #fff;
 }
 
@@ -865,6 +866,69 @@ body {
 
 .report-table tbody tr:hover td {
     background: #fafcff;
+}
+
+/* ── Freeze first 4 columns (Excel-style freeze panes) ─────────────────── */
+
+/* Fix widths so cumulative left offsets are exact and consistent */
+.report-table th:nth-child(1), .report-table td:nth-child(1) { min-width: 84px;  width: 84px; }
+.report-table th:nth-child(2), .report-table td:nth-child(2) { min-width: 104px; width: 104px; }
+.report-table th:nth-child(3), .report-table td:nth-child(3) { min-width: 104px; width: 104px; }
+.report-table th:nth-child(4), .report-table td:nth-child(4) { min-width: 124px; width: 124px; }
+
+/* col 1 — DATE  (left: 0) */
+.report-table th:nth-child(1),
+.report-table td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: #fff;
+}
+
+/* col 2 — COUNTRY  (left: 84px) */
+.report-table th:nth-child(2),
+.report-table td:nth-child(2) {
+    position: sticky;
+    left: 84px;
+    z-index: 3;
+    background: #fff;
+}
+
+/* col 3 — OPERATOR  (left: 84+104 = 188px) */
+.report-table th:nth-child(3),
+.report-table td:nth-child(3) {
+    position: sticky;
+    left: 188px;
+    z-index: 3;
+    background: #fff;
+}
+
+/* col 4 — SERVICE  (left: 84+104+104 = 292px) — freeze boundary shadow */
+.report-table th:nth-child(4),
+.report-table td:nth-child(4) {
+    position: sticky;
+    left: 292px;
+    z-index: 3;
+    background: #fff;
+    border-right: 2px solid var(--border);
+    box-shadow: 3px 0 8px rgba(15, 23, 42, 0.09);
+}
+
+/* Header frozen cells — highest z so they sit above both sticky-row and sticky-col */
+.report-table thead th:nth-child(1),
+.report-table thead th:nth-child(2),
+.report-table thead th:nth-child(3),
+.report-table thead th:nth-child(4) {
+    z-index: 5;
+    background: #fff;
+}
+
+/* Keep frozen cells white on row hover; non-frozen cells get the blue tint */
+.report-table tbody tr:hover td:nth-child(1),
+.report-table tbody tr:hover td:nth-child(2),
+.report-table tbody tr:hover td:nth-child(3),
+.report-table tbody tr:hover td:nth-child(4) {
+    background: #fff;
 }
 
 .numeric {
