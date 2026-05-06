@@ -1,0 +1,442 @@
+@model VASReportingTool.Models.DashboardViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Activation Report";
+}
+
+<div class="container" style="padding-top:28px;">
+
+    <div class="page-actions" style="margin-bottom:18px;">
+        <div>
+            <h1 class="section-title" style="margin-bottom:4px;">Activation Report</h1>
+            <div id="act-meta" style="font-size:11px;color:#6b7280;font-family:'IBM Plex Mono',monospace;"></div>
+        </div>
+        <div class="btn-row">
+            <button class="btn-csv" id="act-export" type="button" style="display:none;">Export CSV</button>
+        </div>
+    </div>
+
+    <div class="card" style="padding:20px 24px;margin-bottom:0;border-radius:12px 12px 0 0;border-bottom:1px solid #e5e7eb;">
+        <div style="margin-bottom:16px;">
+            <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Region</div>
+            <div id="act-region-chips" class="region-chips">
+                @foreach (var region in Model.Regions)
+                {
+                    <button type="button" class="region-chip" data-region-id="@region.RegionId">@region.Name</button>
+                }
+            </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Country</label>
+                <select id="act-country" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All countries</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Operator</label>
+                <select id="act-operator" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All operators</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Service</label>
+                <select id="act-service" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All services</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">From Date</label>
+                <input type="date" id="act-from" class="filter-input" style="width:160px;" />
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">To Date</label>
+                <input type="date" id="act-to" class="filter-input" style="width:160px;" />
+            </div>
+            <button id="act-load" class="primary-btn" disabled style="height:36px;">Load Report</button>
+            <div style="margin-left:auto;">
+                <input type="text" id="act-search" class="tbl-search" placeholder="Search..." style="width:220px;" />
+            </div>
+        </div>
+    </div>
+
+    <div class="tbl-card" style="padding:18px;border-radius:0 0 12px 12px;border-top:none;">
+        <div id="act-loading" style="display:none;padding:56px;text-align:center;">
+            <div style="display:inline-block;width:38px;height:38px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:act-spin .8s linear infinite;"></div>
+            <div style="margin-top:14px;color:#6b7280;font-size:13px;">Fetching activation data...</div>
+        </div>
+        <div id="act-error" style="display:none;padding:28px;text-align:center;color:#dc2626;font-size:13px;"></div>
+        <div id="act-prompt" style="padding:40px;text-align:center;color:#9ca3af;font-size:14px;">Select a region above, then click <strong>Load Report</strong>.</div>
+        <div id="act-empty" style="display:none;padding:40px;text-align:center;color:#6b7280;font-size:13px;">No activation records found for the selected filters.</div>
+        <div id="act-count" style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;min-height:16px;"></div>
+        <div id="act-wrap" style="display:none;overflow-x:auto;max-height:560px;overflow-y:auto;">
+            <table class="report-table" id="act-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Country</th>
+                        <th>Operator</th>
+                        <th>Service</th>
+                        <th>Source</th>
+                        <th style="text-align:right;">Activation CNT</th>
+                    </tr>
+                </thead>
+                <tbody id="act-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    @@keyframes act-spin { to { transform: rotate(360deg); } }
+
+    #act-table {
+        width: auto;
+        min-width: 860px;
+    }
+
+    #act-table th:nth-child(5),
+    #act-table td:nth-child(5) {
+        min-width: 220px;
+    }
+
+    #act-table th:nth-child(6),
+    #act-table td:nth-child(6) {
+        min-width: 110px;
+        width: 110px;
+    }
+</style>
+
+<script>
+(function () {
+    var selectedRegionId = null;
+    var selectedRegionName = '';
+    var allRows = [];
+    var dataUrl = '@Url.Content("~/Activation/Data")';
+    var countriesUrl = '@Url.Content("~/api/regions/countries")';
+    var operatorsUrl = '@Url.Content("~/api/regions/operators")';
+    var servicesUrl = '@Url.Content("~/api/regions/services")';
+
+    var today = new Date();
+    var monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    var yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
+    function fmtInputDate(d) {
+        var y = d.getFullYear();
+        var m = ('0' + (d.getMonth() + 1)).slice(-2);
+        var day = ('0' + d.getDate()).slice(-2);
+        return y + '-' + m + '-' + day;
+    }
+
+    function fmtDisplayDate(value) {
+        var parsed = new Date(value);
+        if (isNaN(parsed.getTime())) {
+            return value || '';
+        }
+
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return ('0' + parsed.getDate()).slice(-2) + ' '
+            + months[parsed.getMonth()] + ' '
+            + parsed.getFullYear();
+    }
+
+    document.getElementById('act-from').value = fmtInputDate(monthStart);
+    document.getElementById('act-to').value = fmtInputDate(yesterday);
+
+    function esc(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fmtNum(n) {
+        return Number(n).toLocaleString();
+    }
+
+    function normalizeRow(row) {
+        row = row || {};
+        return {
+            RawDate: row.date || row.ForDate || '',
+            ForDate: fmtDisplayDate(row.date || row.ForDate),
+            Operator: row.operator || row.Operator || '',
+            Country: row.country || row.Country || '',
+            Service: row.service || row.Service || '',
+            Source: row.source || row.Source || '',
+            ActivationCnt: Number(row.activationCnt != null ? row.activationCnt : row.ActivationCnt) || 0
+        };
+    }
+
+    function setState(state, message) {
+        document.getElementById('act-loading').style.display = state === 'loading' ? 'block' : 'none';
+        document.getElementById('act-error').style.display = state === 'error' ? 'block' : 'none';
+        document.getElementById('act-prompt').style.display = state === 'prompt' ? 'block' : 'none';
+        document.getElementById('act-empty').style.display = state === 'empty' ? 'block' : 'none';
+        document.getElementById('act-wrap').style.display = state === 'data' ? 'block' : 'none';
+        if (state === 'error') {
+            document.getElementById('act-error').textContent = message || 'Failed to load activation data.';
+        }
+    }
+
+    function resetSelect(id, placeholder) {
+        var el = document.getElementById(id);
+        el.innerHTML = '<option value="">' + placeholder + '</option>';
+        el.disabled = true;
+    }
+
+    function populateSelect(id, items, placeholder) {
+        var sel = document.getElementById(id);
+        sel.innerHTML = '<option value="">' + placeholder + '</option>';
+        (items || []).forEach(function (value) {
+            var option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            sel.appendChild(option);
+        });
+        sel.disabled = false;
+    }
+
+    function clearLoadedData() {
+        allRows = [];
+        document.getElementById('act-tbody').innerHTML = '';
+        document.getElementById('act-count').textContent = '';
+        document.getElementById('act-meta').textContent = '';
+        document.getElementById('act-export').style.display = 'none';
+    }
+
+    function renderRows(rows) {
+        var tbody = document.getElementById('act-tbody');
+        var countEl = document.getElementById('act-count');
+
+        if (!rows.length) {
+            tbody.innerHTML = '';
+            countEl.textContent = allRows.length
+                ? '0 records (filtered from ' + allRows.length + ')'
+                : '';
+            setState('empty');
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            html += '<tr>'
+                + '<td class="date-cell">' + esc(r.ForDate) + '</td>'
+                + '<td><strong>' + esc(r.Country) + '</strong></td>'
+                + '<td>' + esc(r.Operator) + '</td>'
+                + '<td>' + esc(r.Service) + '</td>'
+                + '<td>' + esc(r.Source) + '</td>'
+                + '<td style="text-align:right;font-weight:700;color:#2563eb;">'
+                + fmtNum(r.ActivationCnt) + '</td>'
+                + '</tr>';
+        }
+
+        tbody.innerHTML = html;
+        countEl.textContent = rows.length + ' record' + (rows.length !== 1 ? 's' : '')
+            + (rows.length !== allRows.length ? ' (filtered from ' + allRows.length + ')' : '');
+        setState('data');
+    }
+
+    function applySearch() {
+        var q = (document.getElementById('act-search').value || '').toLowerCase().trim();
+        if (!q) {
+            renderRows(allRows);
+            return;
+        }
+
+        var terms = q.split(',')
+            .map(function (t) { return t.trim(); })
+            .filter(function (t) { return t; });
+
+        renderRows(allRows.filter(function (r) {
+            var line = [r.ForDate, r.Country, r.Operator, r.Service, r.Source].join(' ').toLowerCase();
+            return terms.every(function (t) { return line.indexOf(t) >= 0; });
+        }));
+    }
+
+    function loadCountries() {
+        var countrySelect = document.getElementById('act-country');
+        countrySelect.innerHTML = '<option value="">Loading...</option>';
+        countrySelect.disabled = true;
+        document.getElementById('act-load').disabled = true;
+
+        fetch(countriesUrl + '?regionId=' + encodeURIComponent(selectedRegionId))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                populateSelect('act-country', Array.isArray(data) ? data : [], 'All countries');
+                document.getElementById('act-load').disabled = false;
+            })
+            .catch(function () {
+                populateSelect('act-country', [], 'All countries');
+                document.getElementById('act-load').disabled = false;
+            });
+    }
+
+    function loadReport() {
+        if (!selectedRegionId) {
+            return;
+        }
+
+        var from = document.getElementById('act-from').value;
+        var to = document.getElementById('act-to').value;
+        if (!from || !to) {
+            alert('Please select both From Date and To Date.');
+            return;
+        }
+
+        clearLoadedData();
+        setState('loading');
+
+        var url = dataUrl
+            + '?regionId=' + encodeURIComponent(selectedRegionId)
+            + '&fromDate=' + encodeURIComponent(from)
+            + '&toDate=' + encodeURIComponent(to);
+
+        var country = document.getElementById('act-country').value;
+        var operatorName = document.getElementById('act-operator').value;
+        var serviceName = document.getElementById('act-service').value;
+
+        if (country) {
+            url += '&country=' + encodeURIComponent(country);
+        }
+        if (operatorName) {
+            url += '&operatorName=' + encodeURIComponent(operatorName);
+        }
+        if (serviceName) {
+            url += '&serviceName=' + encodeURIComponent(serviceName);
+        }
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+
+            if (xhr.status < 200 || xhr.status >= 300) {
+                setState('error', 'Error: activation data returned HTTP ' + xhr.status + '.');
+                return;
+            }
+
+            try {
+                var resp = JSON.parse(xhr.responseText);
+                if (resp.error || resp.message) {
+                    setState('error', 'Error: ' + (resp.error || resp.message));
+                    return;
+                }
+
+                allRows = (resp.rows || resp.Rows || []).map(normalizeRow);
+                var resolvedFrom = resp.FromDate || from;
+                var resolvedTo = resp.ToDate || to;
+
+                document.getElementById('act-meta').textContent =
+                    selectedRegionName + ' | ' + resolvedFrom + ' -> ' + resolvedTo + ' | ' + fmtNum(allRows.length) + ' records';
+
+                document.getElementById('act-export').style.display = allRows.length ? 'inline-block' : 'none';
+                applySearch();
+            } catch (e) {
+                setState('error', 'Unexpected response from server.');
+            }
+        };
+        xhr.onerror = function () {
+            setState('error', 'The activation API could not be reached.');
+        };
+        xhr.send();
+    }
+
+    function exportCsv() {
+        var headers = ['Date', 'Country', 'Operator', 'Service', 'Source', 'ActivationCNT'];
+        var lines = [headers.join(',')];
+        allRows.forEach(function (r) {
+            lines.push([
+                '"' + (r.RawDate || r.ForDate) + '"',
+                '"' + r.Country + '"',
+                '"' + r.Operator + '"',
+                '"' + r.Service + '"',
+                '"' + r.Source + '"',
+                r.ActivationCnt
+            ].join(','));
+        });
+
+        var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'activation_report_' + document.getElementById('act-from').value + '_' + document.getElementById('act-to').value + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    document.getElementById('act-region-chips').addEventListener('click', function (e) {
+        var chip = e.target.closest('.region-chip');
+        if (!chip) {
+            return;
+        }
+
+        document.querySelectorAll('#act-region-chips .region-chip').forEach(function (c) { c.classList.remove('active'); });
+        chip.classList.add('active');
+
+        selectedRegionId = chip.getAttribute('data-region-id');
+        selectedRegionName = chip.textContent.trim();
+
+        resetSelect('act-country', 'Loading...');
+        resetSelect('act-operator', 'All operators');
+        resetSelect('act-service', 'All services');
+        document.getElementById('act-load').disabled = true;
+        document.getElementById('act-search').value = '';
+        clearLoadedData();
+        document.getElementById('act-prompt').innerHTML = 'Region selected: <strong>' + esc(selectedRegionName) + '</strong>. Click <strong>Load Report</strong>.';
+        setState('prompt');
+        loadCountries();
+    });
+
+    document.getElementById('act-country').addEventListener('change', function () {
+        resetSelect('act-operator', 'All operators');
+        resetSelect('act-service', 'All services');
+
+        var country = this.value;
+        if (!country || !selectedRegionId) {
+            return;
+        }
+
+        var operatorSelect = document.getElementById('act-operator');
+        operatorSelect.innerHTML = '<option value="">Loading...</option>';
+        operatorSelect.disabled = true;
+
+        fetch(operatorsUrl + '?regionId=' + encodeURIComponent(selectedRegionId) + '&country=' + encodeURIComponent(country))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { populateSelect('act-operator', Array.isArray(data) ? data : [], 'All operators'); })
+            .catch(function () { populateSelect('act-operator', [], 'All operators'); });
+    });
+
+    document.getElementById('act-operator').addEventListener('change', function () {
+        resetSelect('act-service', 'All services');
+
+        var country = document.getElementById('act-country').value;
+        var operatorName = this.value;
+        if (!operatorName || !selectedRegionId) {
+            return;
+        }
+
+        var serviceSelect = document.getElementById('act-service');
+        serviceSelect.innerHTML = '<option value="">Loading...</option>';
+        serviceSelect.disabled = true;
+
+        fetch(servicesUrl
+            + '?regionId=' + encodeURIComponent(selectedRegionId)
+            + '&country=' + encodeURIComponent(country)
+            + '&operatorName=' + encodeURIComponent(operatorName))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { populateSelect('act-service', Array.isArray(data) ? data : [], 'All services'); })
+            .catch(function () { populateSelect('act-service', [], 'All services'); });
+    });
+
+    document.getElementById('act-load').addEventListener('click', loadReport);
+    document.getElementById('act-search').addEventListener('input', applySearch);
+    document.getElementById('act-export').addEventListener('click', exportCsv);
+
+    setState('prompt');
+})();
+</script>

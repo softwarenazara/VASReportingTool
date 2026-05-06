@@ -4,6 +4,7 @@ using System.Web;
 using System.Web.Mvc;
 using System.Web.Routing;
 using System.Web.Security;
+using System.Web.Script.Serialization;
 using VASReportingTool.Services;
 
 namespace VASReportingTool
@@ -31,7 +32,8 @@ namespace VASReportingTool
                 return;
             }
 
-            var roles = string.IsNullOrWhiteSpace(ticket.UserData) ? new string[0] : new[] { ticket.UserData };
+            var role = ReadRoleFromTicketUserData(ticket.UserData);
+            var roles = string.IsNullOrWhiteSpace(role) ? new string[0] : new[] { role };
             Context.User = new GenericPrincipal(new FormsIdentity(ticket), roles);
         }
 
@@ -70,6 +72,35 @@ namespace VASReportingTool
 
             IController controller = new VASReportingTool.Controllers.ErrorController();
             controller.Execute(new RequestContext(new HttpContextWrapper(Context), routeData));
+        }
+
+        private static string ReadRoleFromTicketUserData(string userData)
+        {
+            if (string.IsNullOrWhiteSpace(userData))
+            {
+                return string.Empty;
+            }
+
+            if (!userData.TrimStart().StartsWith("{", StringComparison.Ordinal))
+            {
+                return userData;
+            }
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var payload = serializer.Deserialize<AuthTicketPayload>(userData);
+                return payload == null ? string.Empty : payload.Role ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private class AuthTicketPayload
+        {
+            public string Role { get; set; }
         }
     }
 }

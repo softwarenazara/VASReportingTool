@@ -22,6 +22,7 @@ namespace VASReportingTool.Repositories
         void SaveRegionUrl(RegionUrlViewModel model);
         void DeleteRegionUrl(int id);
         IList<ReportRow> GetReportRows(int userId, DashboardRequest request, bool isAdmin);
+        IList<ActivationRow> GetActivationRows(int userId, DateTime from, DateTime to, int regionId, string country, string operatorName, string serviceName, bool isAdmin);
         void SaveLoginOtp(LoginOtp challenge);
         LoginOtp GetLatestActiveOtp(int userId);
         void MarkOtpUsed(int loginOtpId);

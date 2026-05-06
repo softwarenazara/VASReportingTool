@@ -459,6 +459,59 @@ namespace VASReportingTool.Repositories
                 .ToList();
         }
 
+        public IList<ActivationRow> GetActivationRows(int userId, DateTime from, DateTime to, int regionId, string country, string operatorName, string serviceName, bool isAdmin)
+        {
+            var rows = new List<ActivationRow>();
+            var regionUrls = GetAccessibleRegionUrls(userId, regionId, isAdmin);
+
+            if (regionUrls.Count == 0)
+            {
+                return rows;
+            }
+
+            rows.AddRange(FetchActivationRows(regionUrls, from, to, true).Rows);
+
+            var overrideTargets = GetCountryOverrideTargets(regionUrls, null);
+            if (overrideTargets.Count > 0)
+            {
+                var overrideResult = FetchActivationRows(overrideTargets, from, to, false);
+                if (overrideResult.HasSuccessfulResponse)
+                {
+                    rows = ExcludeActivationRows(rows, overrideTargets).ToList();
+                    rows.AddRange(overrideResult.Rows);
+                }
+            }
+
+            return NormalizeActivationCountries(rows)
+                .Where(row =>
+                    MatchesTextFilter(row.Country, country) &&
+                    MatchesTextFilter(row.Operator, operatorName) &&
+                    MatchesTextFilter(row.Service, serviceName))
+                .GroupBy(row => new
+                {
+                    row.ForDate,
+                    Country = row.Country ?? string.Empty,
+                    Operator = row.Operator ?? string.Empty,
+                    Service = row.Service ?? string.Empty,
+                    Source = row.Source ?? string.Empty
+                })
+                .Select(group => new ActivationRow
+                {
+                    ForDate = group.Key.ForDate,
+                    Country = group.Key.Country,
+                    Operator = group.Key.Operator,
+                    Service = group.Key.Service,
+                    Source = group.Key.Source,
+                    ActivationCnt = group.Sum(item => item.ActivationCnt)
+                })
+                .OrderByDescending(row => row.ForDate)
+                .ThenBy(row => row.Country)
+                .ThenBy(row => row.Operator)
+                .ThenBy(row => row.Service)
+                .ThenBy(row => row.Source)
+                .ToList();
+        }
+
         private IList<string> GetDistinctFilterValues(int userId, int regionId, bool isAdmin, string operationLabel, Func<RegionApiTarget, string> requestUrlFactory, Func<object, string> valueSelector)
         {
             return GetDistinctFilterValues(
@@ -534,6 +587,66 @@ namespace VASReportingTool.Repositories
             }
 
             return rows;
+        }
+
+        private ActivationFetchResult FetchActivationRows(IList<RegionApiTarget> regionUrls, DateTime from, DateTime to, bool requireAvailability)
+        {
+            var rows = new List<ActivationRow>();
+            var failures = new List<string>();
+            var hasSuccessfulResponse = false;
+
+            foreach (var regionUrl in regionUrls)
+            {
+                var requestUrl = BuildActivationSourceRequestUrl(regionUrl.Url, from, to);
+                try
+                {
+                    var payload = GetJson(requestUrl);
+                    var envelope = _serializer.DeserializeObject(payload) as IDictionary<string, object>;
+                    var sourceRows = ReadJsonArray(envelope, "rows", "Rows", "dailyData", "tableData");
+                    hasSuccessfulResponse = true;
+
+                    foreach (var item in sourceRows)
+                    {
+                        var map = item as IDictionary<string, object>;
+                        if (map == null)
+                        {
+                            continue;
+                        }
+
+                        var country = ReadString(map, "country", "Country");
+                        if (!string.IsNullOrWhiteSpace(regionUrl.OverrideCountry) &&
+                            !MatchesTextFilter(country, regionUrl.OverrideCountry))
+                        {
+                            continue;
+                        }
+
+                        rows.Add(new ActivationRow
+                        {
+                            ForDate = ReadDate(map, "date", "Date", "forDate", "ForDate"),
+                            Operator = ReadString(map, "operator", "Operator"),
+                            Country = NormalizeCountry(regionUrl.RegionName, country),
+                            Service = ReadString(map, "service", "Service"),
+                            Source = ReadString(map, "source", "Source", "activationSource", "ActivationSource", "activationChannel", "ActivationChannel"),
+                            ActivationCnt = ReadLong(map, "activationCnt", "ActivationCnt", "activationCount", "ACTIVATION COUNT", "ACTIVATION", "Activations", "activations")
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    TrackRegionApiFailure("activation source data", regionUrl, requestUrl, ex, failures);
+                }
+            }
+
+            if (requireAvailability)
+            {
+                EnsureRegionApiAvailability("activation source data", 0, regionUrls, failures, hasSuccessfulResponse);
+            }
+
+            return new ActivationFetchResult
+            {
+                Rows = rows,
+                HasSuccessfulResponse = hasSuccessfulResponse
+            };
         }
 
         private IList<string> GetDistinctFilterValues(int regionId, IList<RegionApiTarget> regionUrls, string operationLabel, Func<RegionApiTarget, string> requestUrlFactory, Func<object, string> valueSelector)
@@ -642,6 +755,21 @@ namespace VASReportingTool.Repositories
             foreach (var row in rows)
             {
                 row.Country = NormalizeCountry(row.RegionName, row.Country);
+            }
+
+            return rows;
+        }
+
+        private static IList<ActivationRow> NormalizeActivationCountries(IList<ActivationRow> rows)
+        {
+            if (rows == null)
+            {
+                return new List<ActivationRow>();
+            }
+
+            foreach (var row in rows)
+            {
+                row.Country = NormalizeCountry(string.Empty, row.Country);
             }
 
             return rows;
@@ -896,6 +1024,19 @@ namespace VASReportingTool.Repositories
                 .ToList();
         }
 
+        private static IList<ActivationRow> ExcludeActivationRows(IList<ActivationRow> rows, IList<RegionApiTarget> overrideTargets)
+        {
+            if (rows == null || rows.Count == 0 || overrideTargets == null || overrideTargets.Count == 0)
+            {
+                return rows == null ? new List<ActivationRow>() : rows.ToList();
+            }
+
+            return rows
+                .Where(row => !overrideTargets.Any(target =>
+                    MatchesTextFilter(target.OverrideCountry, row.Country)))
+                .ToList();
+        }
+
         private static string BuildDashboardRequestUrl(string baseUrl, DashboardRequest request)
         {
             return BuildReportRequestUrl(baseUrl, request, "report/dashboard");
@@ -904,6 +1045,15 @@ namespace VASReportingTool.Repositories
         private static string BuildHourlyRequestUrl(string baseUrl, DashboardRequest request)
         {
             return BuildReportRequestUrl(baseUrl, request, "report/hourly");
+        }
+
+        private static string BuildActivationSourceRequestUrl(string baseUrl, DateTime from, DateTime to)
+        {
+            var builder = new StringBuilder(BuildRegionApiUrl(baseUrl, "report/activation-source"));
+            builder.Append("?");
+            builder.Append("fromDate=").Append(from.ToString("yyyy-MM-dd"));
+            builder.Append("&toDate=").Append(to.ToString("yyyy-MM-dd"));
+            return builder.ToString();
         }
 
         private static string BuildReportRequestUrl(string baseUrl, DashboardRequest request, string relativePath)
@@ -1504,6 +1654,29 @@ namespace VASReportingTool.Repositories
             return decimal.TryParse(Convert.ToString(value), out decimalValue) ? Convert.ToInt32(decimalValue) : 0;
         }
 
+        private static long ReadLong(IDictionary<string, object> map, params string[] keys)
+        {
+            object value;
+            if (!TryGetValue(map, out value, keys) || value == null)
+            {
+                return 0L;
+            }
+
+            if (value is long) return (long)value;
+            if (value is int) return Convert.ToInt64(value);
+            if (value is decimal) return Convert.ToInt64(value);
+            if (value is double) return Convert.ToInt64(Math.Round((double)value));
+
+            long longValue;
+            if (long.TryParse(Convert.ToString(value), out longValue))
+            {
+                return longValue;
+            }
+
+            decimal decimalValue;
+            return decimal.TryParse(Convert.ToString(value), out decimalValue) ? Convert.ToInt64(decimalValue) : 0L;
+        }
+
         private static decimal ReadDecimal(IDictionary<string, object> map, params string[] keys)
         {
             object value;
@@ -1666,6 +1839,12 @@ namespace VASReportingTool.Repositories
             public bool HasSuccessfulResponse { get; set; }
         }
 
+        private class ActivationFetchResult
+        {
+            public IList<ActivationRow> Rows { get; set; }
+            public bool HasSuccessfulResponse { get; set; }
+        }
+
         private class DownstreamRequestException : InvalidOperationException
         {
             public DownstreamRequestException(string message, Exception innerException, HttpStatusCode? statusCode, WebExceptionStatus webExceptionStatus)
@@ -1680,5 +1859,3 @@ namespace VASReportingTool.Repositories
         }
     }
 }
-
-

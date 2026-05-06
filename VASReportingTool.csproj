@@ -69,6 +69,7 @@
     <Compile Include="App_Start\FilterConfig.cs" />
     <Compile Include="App_Start\RouteConfig.cs" />
     <Compile Include="Controllers\AccountController.cs" />
+    <Compile Include="Controllers\ActivationController.cs" />
     <Compile Include="Controllers\AdminController.cs" />
     <Compile Include="Controllers\DashboardController.cs" />
     <Compile Include="Controllers\ToolSummaryController.cs" />
@@ -81,6 +82,7 @@
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
+    <Compile Include="Models\ActivationRow.cs" />
     <Compile Include="Models\ActivityLogFilterViewModel.cs" />
     <Compile Include="Models\AdminDashboardViewModel.cs" />
     <Compile Include="Models\DashboardDataResponse.cs" />
@@ -117,6 +119,7 @@
     <Content Include="Default.aspx" />
     <Content Include="Global.asax" />
     <Content Include="Scripts\dashboard.js" />
+    <Content Include="Views\Activation\Index.cshtml" />
     <Content Include="Views\Account\ForgotPassword.cshtml" />
     <Content Include="Views\Account\Login.cshtml" />
     <Content Include="Views\Account\ResetPassword.cshtml" />

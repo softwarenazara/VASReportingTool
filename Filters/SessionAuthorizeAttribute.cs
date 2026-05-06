@@ -3,6 +3,7 @@ using System.Linq;
 using System.Web;
 using System.Web.Mvc;
 using System.Web.Routing;
+using VASReportingTool.Services;
 
 namespace VASReportingTool.Filters
 {
@@ -16,7 +17,18 @@ namespace VASReportingTool.Filters
             }
 
             var session = httpContext.Session;
-            if (session == null || session["UserId"] == null)
+            if (session == null)
+            {
+                return false;
+            }
+
+            if (session["UserId"] == null && httpContext.Request.IsAuthenticated)
+            {
+                var authenticationService = new AuthenticationService();
+                authenticationService.TryRestoreSession(httpContext);
+            }
+
+            if (session["UserId"] == null || !httpContext.Request.IsAuthenticated)
             {
                 return false;
             }

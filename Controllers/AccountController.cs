@@ -37,9 +37,16 @@ namespace VASReportingTool.Controllers{
         public ActionResult Login()
         {
             PreventPageCaching();
-            if (Session["UserId"] != null)
+
+            if (Request.IsAuthenticated && _authenticationService.TryRestoreSession(HttpContext))
             {
                 return RedirectToAction("Index", "Dashboard");
+            }
+
+            if (Session["UserId"] != null)
+            {
+                Session.Clear();
+                Session.Abandon();
             }
 
             if (Request.IsAuthenticated)
@@ -165,14 +172,9 @@ namespace VASReportingTool.Controllers{
             }
 
             _repository.MarkOtpUsed(challenge.LoginOtpId);
-            _authenticationService.SignIn(Response, user, false);
-            Session["UserId"] = user.UserId;
-            Session["Username"] = user.Username;
-            Session["Role"] = role;
-            Session["SessionKey"] = sessionKey;
-            Session["UserLocation"] = locationText;
-            Session["UserIpAddress"] = ipAddress;
-            Session.Timeout = 180;
+            var authExpiresOnLocal = GetTodaySessionExpiryLocal();
+            _authenticationService.SignIn(Response, user, authExpiresOnLocal, sessionKey, ipAddress, locationText);
+            ApplyAuthenticatedSession(user, role, sessionKey, ipAddress, locationText, authExpiresOnLocal);
             ClearPendingSession();
             _repository.LogUserActivity(BuildActivity(user, sessionKey, "LoginSuccessful", "OTP verified and user session started.", ipAddress, locationText));
             return RedirectToAction("Index", "Dashboard");
@@ -312,7 +314,8 @@ namespace VASReportingTool.Controllers{
         [SessionAuthorize]
         public JsonResult KeepAlive()
         {
-            // Accessing the session refreshes the sliding Forms-auth cookie and ASP.NET session.
+            // Accessing the session keeps the active server session warm while the
+            // fixed same-day auth ticket remains valid.
             return Json(new { ok = true }, JsonRequestBehavior.AllowGet);
         }
 
@@ -451,6 +454,34 @@ namespace VASReportingTool.Controllers{
             Response.Cookies.Add(expiredCookie);
         }
 
+        private void ApplyAuthenticatedSession(User user, string role, string sessionKey, string ipAddress, string locationText, DateTime authExpiresOnLocal)
+        {
+            Session["UserId"] = user.UserId;
+            Session["Username"] = user.Username;
+            Session["Role"] = string.IsNullOrWhiteSpace(role) ? user.Role : role;
+            Session["SessionKey"] = sessionKey;
+            Session["UserLocation"] = locationText;
+            Session["UserIpAddress"] = ipAddress;
+            Session["AuthExpiresOnUtc"] = authExpiresOnLocal.ToUniversalTime().ToString("o");
+            Session.Timeout = CalculateRemainingSessionMinutes(authExpiresOnLocal);
+        }
+
+        private static DateTime GetTodaySessionExpiryLocal()
+        {
+            return DateTime.Today.AddDays(1).AddSeconds(-1);
+        }
+
+        private static int CalculateRemainingSessionMinutes(DateTime expiresOnLocal)
+        {
+            var remainingMinutes = (int)Math.Ceiling((expiresOnLocal - DateTime.Now).TotalMinutes);
+            if (remainingMinutes < 1)
+            {
+                return 1;
+            }
+
+            return remainingMinutes;
+        }
+
         private static string MaskEmail(string email)
         {
             if (string.IsNullOrWhiteSpace(email))
@@ -490,5 +521,4 @@ namespace VASReportingTool.Controllers{
         }
     }
 }
-
 
