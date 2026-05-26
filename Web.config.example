@@ -14,6 +14,7 @@
     <add key="OtpResendCooldownSeconds" value="60" />
     <add key="GeoLocationApiUrl" value="https://api.ipinfo.io/lite/{0}?token={1}" />
     <add key="GeoLocationApiToken" value="REPLACE_WITH_FREE_IPINFO_TOKEN" />
+    <add key="RegionActivationDatatypes" value="Africa|SUCCESSFUL ACT" />
     <add key="RegionCountryBackendOverrides" value="Africa|Ethiopia|http://example.com/VAS_Backend_API/api" />
     <add key="RegionCountryAliases" value="APAC|Maldives|Maldives,Maldives_Direct;APAC|Myanmar|Myanmar,Myanmar_Direct,Myanmar_SSD" />
   </appSettings>

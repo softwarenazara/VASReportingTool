@@ -2,7 +2,7 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "VAS Command Center";
-    var defaultRegionId = Model.Regions != null && Model.Regions.Count > 0 ? Model.Regions[0].RegionId : 0;
+    var defaultRegionId = Model.DefaultRegionId;
     var dashboardScriptVersion = System.IO.File.GetLastWriteTimeUtc(Server.MapPath("~/Scripts/dashboard.js")).Ticks.ToString();
 }
 <div class="dashboard-app"
@@ -99,6 +99,7 @@
                     <button class="tab cur-tab on" type="button" data-currency="local">Local</button>
                     <button class="tab cur-tab" type="button" data-currency="USD">USD $</button>
                     <button class="tab cur-tab" type="button" data-currency="INR">INR ₹</button>
+                    <button class="tab cur-tab" type="button" data-currency="AED">AED</button>
                 </div>
                 <div class="tabs" id="viewTabs">
                     <button class="tab on" type="button" data-view="daily">Daily</button>

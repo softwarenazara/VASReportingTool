@@ -1,0 +1,464 @@
+@model VASReportingTool.Models.DashboardViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "ARPU Report";
+    var defaultRegionId = Model.DefaultRegionId;
+}
+
+<div class="container" style="padding-top:28px;padding-bottom:40px;">
+    <div class="page-actions" style="margin-bottom:18px;">
+        <div>
+            <h1 class="section-title" style="margin-bottom:4px;">ARPU Report</h1>
+            <div id="arpu-meta" style="font-size:11px;color:#6b7280;font-family:'IBM Plex Mono',monospace;min-height:16px;"></div>
+        </div>
+    </div>
+
+    <div class="card" style="padding:20px 24px;border-radius:12px;">
+        <div style="margin-bottom:16px;">
+            <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Region</div>
+            <div id="arpu-region-chips" class="region-chips">
+                @foreach (var region in Model.Regions)
+                {
+                    <button type="button"
+                            class="region-chip @(region.RegionId == defaultRegionId ? "active" : string.Empty)"
+                            data-region-id="@region.RegionId">@region.Name</button>
+                }
+            </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Country</label>
+                <select id="arpu-country" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All countries</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Operator</label>
+                <select id="arpu-operator" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All operators</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Service</label>
+                <select id="arpu-service" class="filter-select" style="min-width:150px;" disabled>
+                    <option value="">All services</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">From Date</label>
+                <input type="date" id="arpu-from" class="filter-input" style="width:160px;" />
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">To Date</label>
+                <input type="date" id="arpu-to" class="filter-input" style="width:160px;" />
+            </div>
+            <button id="arpu-load" class="primary-btn" disabled style="height:36px;">Load Report</button>
+        </div>
+
+        <div id="arpu-inline-error" style="display:none;margin-top:14px;padding:10px 12px;border:1px solid #fecaca;border-radius:10px;background:#fef2f2;color:#b91c1c;font-size:13px;"></div>
+    </div>
+
+    <div class="tbl-card" id="arpu-results" style="display:none;margin-top:18px;padding:18px;border-radius:12px;">
+        <div id="arpu-loading" style="display:none;padding:56px;text-align:center;">
+            <div style="display:inline-block;width:38px;height:38px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:arpu-spin .8s linear infinite;"></div>
+            <div style="margin-top:14px;color:#6b7280;font-size:13px;">Fetching ARPU data...</div>
+        </div>
+        <div id="arpu-error" style="display:none;padding:28px;text-align:center;color:#dc2626;font-size:13px;"></div>
+        <div id="arpu-empty" style="display:none;padding:40px;text-align:center;color:#6b7280;font-size:13px;">No ARPU records found for the selected filters.</div>
+        <div id="arpu-count" style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;min-height:16px;"></div>
+        <div id="arpu-wrap" style="display:none;overflow-x:auto;max-height:620px;overflow-y:auto;">
+            <table class="report-table" id="arpu-table">
+                <thead>
+                    <tr>
+                        <th>Operator</th>
+                        <th>Country</th>
+                        <th>Service</th>
+                        <th>Activation Date</th>
+                        <th>Source</th>
+                        <th style="text-align:right;">Activations</th>
+                        <th style="text-align:right;">Free To Paid</th>
+                        <th style="text-align:right;">Churn</th>
+                        <th style="text-align:right;">Total Revenue</th>
+                        <th style="text-align:right;">ARPU</th>
+                        <th>Billing Date</th>
+                    </tr>
+                </thead>
+                <tbody id="arpu-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    @@keyframes arpu-spin { to { transform: rotate(360deg); } }
+
+    #arpu-table {
+        width: auto;
+        min-width: 1320px;
+    }
+
+    #arpu-table th:nth-child(3),
+    #arpu-table td:nth-child(3) {
+        min-width: 180px;
+    }
+
+    #arpu-table th:nth-child(5),
+    #arpu-table td:nth-child(5) {
+        min-width: 180px;
+    }
+
+    #arpu-table th:nth-child(9),
+    #arpu-table td:nth-child(9),
+    #arpu-table th:nth-child(10),
+    #arpu-table td:nth-child(10) {
+        min-width: 120px;
+    }
+</style>
+
+<script>
+(function () {
+    var selectedRegionId = null;
+    var selectedRegionName = '';
+    var allRows = [];
+    var dataUrl = '@Url.Action("ArpuReportData", "ToolSummary")';
+    var countriesUrl = '@Url.Content("~/api/regions/countries")';
+    var operatorsUrl = '@Url.Content("~/api/regions/operators")';
+    var servicesUrl = '@Url.Content("~/api/regions/services")';
+
+    var today = new Date();
+    var defaultFrom = new Date(today);
+    defaultFrom.setDate(today.getDate() - 7);
+    var defaultTo = new Date(today);
+    defaultTo.setDate(today.getDate() - 1);
+
+    function byId(id) {
+        return document.getElementById(id);
+    }
+
+    function fmtInputDate(d) {
+        var y = d.getFullYear();
+        var m = ('0' + (d.getMonth() + 1)).slice(-2);
+        var day = ('0' + d.getDate()).slice(-2);
+        return y + '-' + m + '-' + day;
+    }
+
+    function fmtDisplayDate(value) {
+        if (!value) {
+            return '';
+        }
+
+        var parsed = new Date(value);
+        if (isNaN(parsed.getTime())) {
+            return value;
+        }
+
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return ('0' + parsed.getDate()).slice(-2) + ' '
+            + months[parsed.getMonth()] + ' '
+            + parsed.getFullYear();
+    }
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fmtNum(n) {
+        return Number(n || 0).toLocaleString();
+    }
+
+    function fmtMoney(n) {
+        return Number(n || 0).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function setInlineError(message) {
+        var el = byId('arpu-inline-error');
+        if (!message) {
+            el.style.display = 'none';
+            el.textContent = '';
+            return;
+        }
+
+        el.style.display = 'block';
+        el.textContent = message;
+    }
+
+    function setResultsState(state, message) {
+        var results = byId('arpu-results');
+        var isHidden = state === 'hidden';
+        results.style.display = isHidden ? 'none' : 'block';
+        byId('arpu-loading').style.display = state === 'loading' ? 'block' : 'none';
+        byId('arpu-error').style.display = state === 'error' ? 'block' : 'none';
+        byId('arpu-empty').style.display = state === 'empty' ? 'block' : 'none';
+        byId('arpu-wrap').style.display = state === 'data' ? 'block' : 'none';
+
+        if (state === 'error') {
+            byId('arpu-error').textContent = message || 'Failed to load ARPU data.';
+        }
+    }
+
+    function resetSelect(id, placeholder) {
+        var el = byId(id);
+        el.innerHTML = '<option value="">' + placeholder + '</option>';
+        el.disabled = true;
+    }
+
+    function populateSelect(id, items, placeholder) {
+        var sel = byId(id);
+        sel.innerHTML = '<option value="">' + placeholder + '</option>';
+        (items || []).forEach(function (value) {
+            var option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            sel.appendChild(option);
+        });
+        sel.disabled = false;
+    }
+
+    function clearLoadedData() {
+        allRows = [];
+        byId('arpu-tbody').innerHTML = '';
+        byId('arpu-count').textContent = '';
+        byId('arpu-meta').textContent = '';
+        setResultsState('hidden');
+    }
+
+    function buildMetaText(from, to, rows) {
+        var country = byId('arpu-country').value || 'All Countries';
+        var operator = byId('arpu-operator').value || 'All Operators';
+        var service = byId('arpu-service').value || 'All Services';
+        var billingDate = rows.length ? rows[0].RawBillingDate : '';
+        var parts = [
+            selectedRegionName || 'Region',
+            country,
+            operator,
+            service,
+            from + ' -> ' + to
+        ];
+
+        if (billingDate) {
+            parts.push('Billing Date: ' + billingDate);
+        }
+
+        parts.push(fmtNum(rows.length) + ' records');
+        return parts.join(' | ');
+    }
+
+    function normalizeRow(row) {
+        row = row || {};
+        return {
+            Operator: row.operator || row.Operator || '',
+            Country: row.country || row.Country || '',
+            Service: row.service || row.Service || '',
+            RawActivationDate: row.activationDate || row.ActivationDate || '',
+            ActivationDate: fmtDisplayDate(row.activationDate || row.ActivationDate),
+            Source: row.source == null ? 'NULL' : (row.source || row.Source || 'NULL'),
+            Activations: Number(row.activations != null ? row.activations : row.Activations) || 0,
+            FreeToPaid: Number(row.freeToPaid != null ? row.freeToPaid : row.FreeToPaid) || 0,
+            Churn: Number(row.churn != null ? row.churn : row.Churn) || 0,
+            TotalRevenue: Number(row.totalRevenue != null ? row.totalRevenue : row.TotalRevenue) || 0,
+            Arpu: Number(row.arpu != null ? row.arpu : row.Arpu) || 0,
+            RawBillingDate: row.billingDate || row.BillingDate || '',
+            BillingDate: fmtDisplayDate(row.billingDate || row.BillingDate)
+        };
+    }
+
+    function renderRows(rows) {
+        var tbody = byId('arpu-tbody');
+        var countEl = byId('arpu-count');
+
+        if (!rows.length) {
+            tbody.innerHTML = '';
+            countEl.textContent = '0 records';
+            setResultsState('empty');
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            html += '<tr>'
+                + '<td>' + esc(r.Operator) + '</td>'
+                + '<td><strong>' + esc(r.Country) + '</strong></td>'
+                + '<td>' + esc(r.Service) + '</td>'
+                + '<td class="date-cell">' + esc(r.ActivationDate) + '</td>'
+                + '<td>' + esc(r.Source) + '</td>'
+                + '<td style="text-align:right;">' + fmtNum(r.Activations) + '</td>'
+                + '<td style="text-align:right;">' + fmtNum(r.FreeToPaid) + '</td>'
+                + '<td style="text-align:right;">' + fmtNum(r.Churn) + '</td>'
+                + '<td style="text-align:right;font-weight:700;color:#2563eb;">' + fmtMoney(r.TotalRevenue) + '</td>'
+                + '<td style="text-align:right;font-weight:700;color:#059669;">' + fmtMoney(r.Arpu) + '</td>'
+                + '<td class="date-cell">' + esc(r.BillingDate) + '</td>'
+                + '</tr>';
+        }
+
+        tbody.innerHTML = html;
+        countEl.textContent = rows.length + ' record' + (rows.length !== 1 ? 's' : '');
+        setResultsState('data');
+    }
+
+    function loadCountries() {
+        var countrySelect = byId('arpu-country');
+        countrySelect.innerHTML = '<option value="">Loading...</option>';
+        countrySelect.disabled = true;
+        byId('arpu-load').disabled = true;
+
+        fetch(countriesUrl + '?regionId=' + encodeURIComponent(selectedRegionId))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                populateSelect('arpu-country', Array.isArray(data) ? data : [], 'All countries');
+                byId('arpu-load').disabled = false;
+            })
+            .catch(function () {
+                populateSelect('arpu-country', [], 'All countries');
+                byId('arpu-load').disabled = false;
+            });
+    }
+
+    function loadReport() {
+        if (!selectedRegionName) {
+            setInlineError('Please select a region.');
+            return;
+        }
+
+        var from = byId('arpu-from').value;
+        var to = byId('arpu-to').value;
+        if (!from || !to) {
+            setInlineError('Please select both From Date and To Date.');
+            return;
+        }
+
+        if (from > to) {
+            setInlineError('From Date cannot be greater than To Date.');
+            return;
+        }
+
+        setInlineError('');
+        setResultsState('loading');
+        byId('arpu-tbody').innerHTML = '';
+        byId('arpu-count').textContent = '';
+
+        var payload = {
+            region: selectedRegionName,
+            country: byId('arpu-country').value || '',
+            operator: byId('arpu-operator').value || '',
+            service: byId('arpu-service').value || '',
+            fromDate: from,
+            toDate: to
+        };
+
+        fetch(dataUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                if (data && data.error) {
+                    setResultsState('error', data.error);
+                    return;
+                }
+
+                allRows = (Array.isArray(data) ? data : []).map(normalizeRow);
+                byId('arpu-meta').textContent = buildMetaText(from, to, allRows);
+                renderRows(allRows);
+            })
+            .catch(function () {
+                setResultsState('error', 'The ARPU API could not be reached.');
+            });
+    }
+
+    function resetDataView() {
+        setInlineError('');
+        clearLoadedData();
+    }
+
+    byId('arpu-from').value = fmtInputDate(defaultFrom);
+    byId('arpu-to').value = fmtInputDate(defaultTo);
+
+    byId('arpu-region-chips').addEventListener('click', function (e) {
+        var chip = e.target.closest('.region-chip');
+        if (!chip) {
+            return;
+        }
+
+        document.querySelectorAll('#arpu-region-chips .region-chip').forEach(function (c) { c.classList.remove('active'); });
+        chip.classList.add('active');
+
+        selectedRegionId = chip.getAttribute('data-region-id');
+        selectedRegionName = chip.textContent.trim();
+
+        resetSelect('arpu-country', 'Loading...');
+        resetSelect('arpu-operator', 'All operators');
+        resetSelect('arpu-service', 'All services');
+        resetDataView();
+        byId('arpu-load').disabled = true;
+        loadCountries();
+    });
+
+    byId('arpu-country').addEventListener('change', function () {
+        resetDataView();
+        resetSelect('arpu-operator', 'All operators');
+        resetSelect('arpu-service', 'All services');
+
+        var country = this.value;
+        if (!country || !selectedRegionId) {
+            return;
+        }
+
+        var operatorSelect = byId('arpu-operator');
+        operatorSelect.innerHTML = '<option value="">Loading...</option>';
+        operatorSelect.disabled = true;
+
+        fetch(operatorsUrl + '?regionId=' + encodeURIComponent(selectedRegionId) + '&country=' + encodeURIComponent(country))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { populateSelect('arpu-operator', Array.isArray(data) ? data : [], 'All operators'); })
+            .catch(function () { populateSelect('arpu-operator', [], 'All operators'); });
+    });
+
+    byId('arpu-operator').addEventListener('change', function () {
+        resetDataView();
+        resetSelect('arpu-service', 'All services');
+
+        var country = byId('arpu-country').value;
+        var operatorName = this.value;
+        if (!operatorName || !selectedRegionId) {
+            return;
+        }
+
+        var serviceSelect = byId('arpu-service');
+        serviceSelect.innerHTML = '<option value="">Loading...</option>';
+        serviceSelect.disabled = true;
+
+        fetch(servicesUrl
+            + '?regionId=' + encodeURIComponent(selectedRegionId)
+            + '&country=' + encodeURIComponent(country)
+            + '&operatorName=' + encodeURIComponent(operatorName))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { populateSelect('arpu-service', Array.isArray(data) ? data : [], 'All services'); })
+            .catch(function () { populateSelect('arpu-service', [], 'All services'); });
+    });
+
+    byId('arpu-service').addEventListener('change', resetDataView);
+    byId('arpu-from').addEventListener('change', resetDataView);
+    byId('arpu-to').addEventListener('change', resetDataView);
+    byId('arpu-load').addEventListener('click', loadReport);
+
+    var defaultRegionChip = document.querySelector('#arpu-region-chips .region-chip.active')
+        || document.querySelector('#arpu-region-chips .region-chip');
+
+    if (defaultRegionChip) {
+        defaultRegionChip.click();
+    }
+})();
+</script>

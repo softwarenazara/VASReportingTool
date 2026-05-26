@@ -85,6 +85,8 @@
     <Compile Include="Models\ActivationRow.cs" />
     <Compile Include="Models\ActivityLogFilterViewModel.cs" />
     <Compile Include="Models\AdminDashboardViewModel.cs" />
+    <Compile Include="Models\ArpuReportRequest.cs" />
+    <Compile Include="Models\ArpuRow.cs" />
     <Compile Include="Models\DashboardDataResponse.cs" />
     <Compile Include="Models\DashboardFilterOptions.cs" />
     <Compile Include="Models\DashboardRequest.cs" />
@@ -125,6 +127,7 @@
     <Content Include="Views\Account\ResetPassword.cshtml" />
     <Content Include="Views\Account\VerifyOtp.cshtml" />
     <Content Include="Views\Admin\Index.cshtml" />
+    <Content Include="Views\ToolSummary\ArpuData.cshtml" />
     <Content Include="Views\ToolSummary\Hourly.cshtml" />
     <Content Include="Views\ToolSummary\Index.cshtml" />
     <Content Include="Views\ToolSummary\WorkInProgress.cshtml" />
@@ -143,6 +146,5 @@
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
 </Project>
-
 
 

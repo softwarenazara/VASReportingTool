@@ -86,7 +86,7 @@
         Botswana: "BWP", Namibia: "NAD", Mauritius: "MUR", Madagascar: "MGA",
         Angola: "AOA", Liberia: "LRD", Gambia: "GMD",
         Morocco: "MAD", Tunisia: "TND", Algeria: "DZD", Egypt: "EGP",
-        Jordan: "JOD", Iraq: "IQD", "Saudi Arabia": "SAR", UAE: "AED",
+        Jordan: "JOD", Iraq: "IQD", "Saudi Arabia": "SAR", KSA: "SAR", UAE: "AED",
         Kuwait: "KWD", Bahrain: "BHD", Qatar: "QAR", Oman: "OMR",
         Lebanon: "LBP", Libya: "LYD", Sudan: "SDG", Yemen: "YER",
         Palestine: "ILS", Syria: "SYP",
@@ -98,7 +98,8 @@
 
     var currencySymbols = {
         USD: "$",
-        INR: "\u20b9"
+        INR: "\u20b9",
+        AED: "AED"
     };
 
     var dailyTableState = {
@@ -154,6 +155,19 @@
 
     function getCurrencySymbol(currencyCode) {
         return currencySymbols[currencyCode] || "";
+    }
+
+    function getCurrencyPrefix(currencyCode) {
+        if (currencyCode === "local") {
+            return "";
+        }
+
+        var symbol = getCurrencySymbol(currencyCode);
+        if (!symbol) {
+            return currencyCode + " ";
+        }
+
+        return /^[A-Z]{3}$/.test(symbol) ? symbol + " " : symbol;
     }
 
     function isRevenueColumn(columnKey) {
@@ -238,7 +252,7 @@
                 var cached = store.getItem(cacheKey);
                 if (cached) {
                     var parsed = JSON.parse(cached);
-                    if (parsed && parsed.rates && parsed.rates.USD && parsed.rates.INR) {
+                    if (parsed && parsed.rates && parsed.rates.USD && parsed.rates.INR && parsed.rates.AED) {
                         state.exchangeRates = parsed.rates;
                         state.ratesLoaded = true;
                         return Promise.resolve(true);
@@ -250,24 +264,27 @@
 
         state.ratesPromise = Promise.all([
             fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" }),
-            fetch("https://open.er-api.com/v6/latest/INR", { cache: "no-store" })
+            fetch("https://open.er-api.com/v6/latest/INR", { cache: "no-store" }),
+            fetch("https://open.er-api.com/v6/latest/AED", { cache: "no-store" })
         ]).then(function (responses) {
-            if (!responses[0].ok || !responses[1].ok) {
+            if (!responses[0].ok || !responses[1].ok || !responses[2].ok) {
                 throw new Error("Rate API returned an error.");
             }
 
-            return Promise.all([responses[0].json(), responses[1].json()]);
+            return Promise.all([responses[0].json(), responses[1].json(), responses[2].json()]);
         }).then(function (payloads) {
             var usdData = payloads[0];
             var inrData = payloads[1];
+            var aedData = payloads[2];
 
-            if (usdData.result !== "success" || inrData.result !== "success") {
+            if (usdData.result !== "success" || inrData.result !== "success" || aedData.result !== "success") {
                 throw new Error("Rate API returned an invalid payload.");
             }
 
             state.exchangeRates = {
                 USD: usdData.rates,
-                INR: inrData.rates
+                INR: inrData.rates,
+                AED: aedData.rates
             };
             state.ratesLoaded = true;
 
@@ -430,7 +447,8 @@
             return;
         }
 
-        byId("rateInfoHeader").innerHTML = "Revenue converted to " + state.activeCurrency + " (" + getCurrencySymbol(state.activeCurrency) + ") | Exchange rates for " +
+        var currencySymbol = getCurrencySymbol(state.activeCurrency);
+        byId("rateInfoHeader").innerHTML = "Revenue converted to " + state.activeCurrency + (currencySymbol ? " (" + currencySymbol + ")" : "") + " | Exchange rates for " +
             new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
         byId("rateInfoBody").innerHTML = chips.join("");
         rateInfo.classList.remove("hidden");
@@ -600,8 +618,8 @@
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
-        var symbol = state.activeCurrency === "local" ? "" : getCurrencySymbol(state.activeCurrency);
-        return symbol ? symbol + formatted : formatted;
+        var prefix = getCurrencyPrefix(state.activeCurrency);
+        return prefix ? prefix + formatted : formatted;
     }
 
     function formatPercent(value) {

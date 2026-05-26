@@ -261,9 +261,80 @@ namespace VASReportingTool.Controllers
 
         public ActionResult ArpuData()
         {
-            ViewBag.Title = "ARPU Data";
-            ViewBag.Feature = "ARPU Data";
-            return View("WorkInProgress");
+            if (Session["UserId"] == null)
+                return RedirectToAction("Login", "Account");
+
+            var userId = (int)Session["UserId"];
+            var user = _repository.GetUserById(userId);
+            var isAdmin = string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+            var model = new DashboardViewModel
+            {
+                Username = user.Username,
+                Role = user.Role,
+                IsAdmin = isAdmin,
+                Regions = isAdmin ? _repository.GetAllRegions() : _repository.GetRegionsByUser(userId)
+            };
+
+            return View(model);
+        }
+
+        [HttpPost]
+        public JsonResult ArpuReportData(ArpuReportRequest request)
+        {
+            if (Session["UserId"] == null)
+                return Json(new { error = "Unauthorized" });
+
+            try
+            {
+                request = request ?? new ArpuReportRequest();
+
+                DateTime fromDate;
+                DateTime toDate;
+
+                if (!DateTime.TryParse(request.FromDate, out fromDate))
+                    fromDate = DateTime.Today.AddDays(-7);
+
+                if (!DateTime.TryParse(request.ToDate, out toDate))
+                    toDate = DateTime.Today.AddDays(-1);
+
+                fromDate = fromDate.Date;
+                toDate = toDate.Date;
+
+                if (fromDate > toDate)
+                    return Json(new { error = "From Date cannot be greater than To Date." });
+
+                var userId = (int)Session["UserId"];
+                var user = _repository.GetUserById(userId);
+                var isAdmin = string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+                var rows = _repository.GetArpuRows(
+                    userId,
+                    request.Region,
+                    request.Country,
+                    request.Operator,
+                    request.Service,
+                    fromDate,
+                    toDate,
+                    isAdmin);
+
+                return Json(rows.Select(row => new
+                {
+                    @operator = row.Operator,
+                    country = row.Country,
+                    service = row.Service,
+                    activationDate = row.ActivationDate.ToString("yyyy-MM-dd"),
+                    source = string.IsNullOrWhiteSpace(row.Source) ? null : row.Source,
+                    activations = row.Activations,
+                    freeToPaid = row.FreeToPaid,
+                    churn = row.Churn,
+                    totalRevenue = Math.Round(row.TotalRevenue, 2),
+                    arpu = Math.Round(row.Arpu, 2),
+                    billingDate = row.BillingDate.ToString("yyyy-MM-dd")
+                }));
+            }
+            catch (Exception ex)
+            {
+                return Json(new { error = ex.Message });
+            }
         }
 
         // ── helpers ──────────────────────────────────────────────────────────

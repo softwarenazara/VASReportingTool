@@ -2,6 +2,7 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Hourly Comparison";
+    var defaultRegionId = Model.DefaultRegionId;
 }
 
 <style>
@@ -63,7 +64,9 @@
             <div id="hc-region-chips" style="display:flex;flex-wrap:wrap;gap:8px;">
                 @foreach (var r in Model.Regions)
                 {
-                    <button type="button" class="region-chip" data-region-id="@r.RegionId">@r.Name</button>
+                    <button type="button"
+                            class="region-chip @(r.RegionId == defaultRegionId ? "active" : string.Empty)"
+                            data-region-id="@r.RegionId">@r.Name</button>
                 }
             </div>
         </div>
@@ -183,6 +186,8 @@
         } else {
             retryTab.style.display = '';
         }
+        document.getElementById('hc-prompt').innerHTML = 'Region selected: <strong>' + esc(regionName) + '</strong>. Click <strong>Load Comparison</strong>.';
+        setState('prompt');
         resetSel('hc-country', 'Loading...');
         resetSel('hc-operator', 'All operators');
         resetSel('hc-service', 'All services');
@@ -707,5 +712,14 @@
     function td(inner) { return '<td>' + inner + '</td>'; }
     function tdR(inner) { return '<td style="text-align:right;">' + inner + '</td>'; }
     function tdC(inner) { return '<td style="text-align:center;">' + inner + '</td>'; }
+
+    var defaultRegionChip = document.querySelector('#hc-region-chips .region-chip.active')
+        || document.querySelector('#hc-region-chips .region-chip');
+
+    if (defaultRegionChip) {
+        defaultRegionChip.click();
+    } else {
+        setState('prompt');
+    }
 })();
 </script>

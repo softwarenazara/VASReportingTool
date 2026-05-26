@@ -512,6 +512,94 @@ namespace VASReportingTool.Repositories
                 .ToList();
         }
 
+        public IList<ArpuRow> GetArpuRows(int userId, string region, string country, string operatorName, string serviceName, DateTime fromDate, DateTime toDate, bool isAdmin)
+        {
+            var normalizedRegion = string.IsNullOrWhiteSpace(region) ? null : region.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedRegion))
+            {
+                throw new InvalidOperationException("Please select a region.");
+            }
+
+            var accessibleRegions = isAdmin ? GetAllRegions() : GetRegionsByUser(userId);
+            var selectedRegion = accessibleRegions.FirstOrDefault(item =>
+                string.Equals(item.Name, normalizedRegion, StringComparison.OrdinalIgnoreCase));
+
+            if (selectedRegion == null)
+            {
+                throw new InvalidOperationException("You do not have access to the selected region.");
+            }
+
+            var regionCountries = GetCountries(userId, selectedRegion.RegionId, isAdmin)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (string.IsNullOrWhiteSpace(country) && regionCountries.Count == 0)
+            {
+                throw new InvalidOperationException("No countries are available for the selected region.");
+            }
+
+            var sql = @"
+SELECT
+    Operator,
+    Country,
+    Service,
+    [Activation Date] AS ActivationDate,
+    Source,
+    Activations,
+    [Free To paid] AS FreeToPaid,
+    Churn,
+    [Total Revenue] AS TotalRevenue,
+    [Billing Date] AS BillingDate,
+    CASE
+        WHEN Activations > 0
+        THEN CAST([Total Revenue] AS DECIMAL(18,2)) / Activations
+        ELSE 0
+    END AS ARPU
+FROM [Campaign].[dbo].[tbl_Dashboard_Datewise_Arpu] WITH (NOLOCK)
+WHERE [Billing Date] = (
+    SELECT MAX([Billing Date])
+    FROM [Campaign].[dbo].[tbl_Dashboard_Datewise_Arpu] WITH (NOLOCK)
+)
+AND (@Country IS NULL OR Country = @Country)
+AND (@Operator IS NULL OR Operator = @Operator)
+AND (@Service IS NULL OR Service = @Service)
+AND [Activation Date] >= @FromDate
+AND [Activation Date] < DATEADD(day, 1, @ToDate)
+";
+
+            if (string.IsNullOrWhiteSpace(country))
+            {
+                var regionCountryParameters = new List<string>();
+                for (var index = 0; index < regionCountries.Count; index++)
+                {
+                    regionCountryParameters.Add("@RegionCountry" + index);
+                }
+
+                sql += "AND Country IN (" + string.Join(", ", regionCountryParameters.ToArray()) + ")" + Environment.NewLine;
+            }
+
+            sql += "ORDER BY [Activation Date] DESC, Operator ASC, Country ASC, Service ASC, Source ASC";
+
+            return ExecuteList(sql, cmd =>
+            {
+                cmd.Parameters.AddWithValue("@Country", string.IsNullOrWhiteSpace(country) ? (object)DBNull.Value : country.Trim());
+                cmd.Parameters.AddWithValue("@Operator", string.IsNullOrWhiteSpace(operatorName) ? (object)DBNull.Value : operatorName.Trim());
+                cmd.Parameters.AddWithValue("@Service", string.IsNullOrWhiteSpace(serviceName) ? (object)DBNull.Value : serviceName.Trim());
+                cmd.Parameters.AddWithValue("@FromDate", fromDate.Date);
+                cmd.Parameters.AddWithValue("@ToDate", toDate.Date);
+
+                if (string.IsNullOrWhiteSpace(country))
+                {
+                    for (var index = 0; index < regionCountries.Count; index++)
+                    {
+                        cmd.Parameters.AddWithValue("@RegionCountry" + index, regionCountries[index]);
+                    }
+                }
+            }, ReadArpuRow);
+        }
+
         private IList<string> GetDistinctFilterValues(int userId, int regionId, bool isAdmin, string operationLabel, Func<RegionApiTarget, string> requestUrlFactory, Func<object, string> valueSelector)
         {
             return GetDistinctFilterValues(
@@ -597,7 +685,7 @@ namespace VASReportingTool.Repositories
 
             foreach (var regionUrl in regionUrls)
             {
-                var requestUrl = BuildActivationSourceRequestUrl(regionUrl.Url, from, to);
+                var requestUrl = BuildActivationSourceRequestUrl(regionUrl, from, to);
                 try
                 {
                     var payload = GetJson(requestUrl);
@@ -627,7 +715,7 @@ namespace VASReportingTool.Repositories
                             Country = NormalizeCountry(regionUrl.RegionName, country),
                             Service = ReadString(map, "service", "Service"),
                             Source = ReadString(map, "source", "Source", "activationSource", "ActivationSource", "activationChannel", "ActivationChannel"),
-                            ActivationCnt = ReadLong(map, "activationCnt", "ActivationCnt", "activationCount", "ACTIVATION COUNT", "ACTIVATION", "Activations", "activations")
+                            ActivationCnt = ReadActivationSourceCount(regionUrl.RegionName, map)
                         });
                     }
                 }
@@ -1047,12 +1135,22 @@ namespace VASReportingTool.Repositories
             return BuildReportRequestUrl(baseUrl, request, "report/hourly");
         }
 
-        private static string BuildActivationSourceRequestUrl(string baseUrl, DateTime from, DateTime to)
+        private static string BuildActivationSourceRequestUrl(RegionApiTarget regionUrl, DateTime from, DateTime to)
         {
-            var builder = new StringBuilder(BuildRegionApiUrl(baseUrl, "report/activation-source"));
+            var builder = new StringBuilder(BuildRegionApiUrl(regionUrl.Url, "report/activation-source"));
+            var parameters = new List<string>
+            {
+                "fromDate=" + from.ToString("yyyy-MM-dd"),
+                "toDate=" + to.ToString("yyyy-MM-dd")
+            };
+            var activationDatatype = GetConfiguredActivationDatatype(regionUrl.RegionName);
+            if (!string.IsNullOrWhiteSpace(activationDatatype))
+            {
+                parameters.Add("datatype=" + Uri.EscapeDataString(activationDatatype));
+            }
+
             builder.Append("?");
-            builder.Append("fromDate=").Append(from.ToString("yyyy-MM-dd"));
-            builder.Append("&toDate=").Append(to.ToString("yyyy-MM-dd"));
+            builder.Append(string.Join("&", parameters.ToArray()));
             return builder.ToString();
         }
 
@@ -1124,6 +1222,44 @@ namespace VASReportingTool.Repositories
             }
 
             return overrides;
+        }
+
+        private static string GetConfiguredActivationDatatype(string regionName)
+        {
+            if (string.IsNullOrWhiteSpace(regionName))
+            {
+                return string.Empty;
+            }
+
+            var rawValue = ConfigurationManager.AppSettings["RegionActivationDatatypes"];
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return string.Empty;
+            }
+
+            foreach (var entry in rawValue.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = entry.Split(new[] { '|' }, 2);
+                if (parts.Length < 2)
+                {
+                    continue;
+                }
+
+                var configuredRegionName = (parts[0] ?? string.Empty).Trim();
+                var datatype = (parts[1] ?? string.Empty).Trim();
+                if (string.Equals(configuredRegionName, regionName, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(datatype))
+                {
+                    return datatype;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static long ReadActivationSourceCount(string regionName, IDictionary<string, object> map)
+        {
+            return ReadLong(map, "activationCnt", "ActivationCnt", "activationCount", "ACTIVATION COUNT", "ACTIVATION", "Activations", "activations");
         }
 
         private static IList<CountryAliasGroup> GetConfiguredCountryAliases()
@@ -1808,6 +1944,24 @@ namespace VASReportingTool.Repositories
                 ExpiresOnUtc = Convert.ToDateTime(reader["ExpiresOnUtc"]),
                 IsUsed = Convert.ToBoolean(reader["IsUsed"]),
                 CreatedOnUtc = Convert.ToDateTime(reader["CreatedOnUtc"])
+            };
+        }
+
+        private static ArpuRow ReadArpuRow(IDataRecord reader)
+        {
+            return new ArpuRow
+            {
+                Operator = reader["Operator"] == DBNull.Value ? string.Empty : reader["Operator"].ToString(),
+                Country = reader["Country"] == DBNull.Value ? string.Empty : reader["Country"].ToString(),
+                Service = reader["Service"] == DBNull.Value ? string.Empty : reader["Service"].ToString(),
+                ActivationDate = reader["ActivationDate"] == DBNull.Value ? DateTime.MinValue : Convert.ToDateTime(reader["ActivationDate"]),
+                Source = reader["Source"] == DBNull.Value ? null : reader["Source"].ToString(),
+                Activations = reader["Activations"] == DBNull.Value ? 0 : Convert.ToInt32(reader["Activations"]),
+                FreeToPaid = reader["FreeToPaid"] == DBNull.Value ? 0 : Convert.ToInt32(reader["FreeToPaid"]),
+                Churn = reader["Churn"] == DBNull.Value ? 0 : Convert.ToInt32(reader["Churn"]),
+                TotalRevenue = reader["TotalRevenue"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["TotalRevenue"]),
+                Arpu = reader["ARPU"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["ARPU"]),
+                BillingDate = reader["BillingDate"] == DBNull.Value ? DateTime.MinValue : Convert.ToDateTime(reader["BillingDate"])
             };
         }
 

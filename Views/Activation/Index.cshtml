@@ -2,6 +2,7 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Activation Report";
+    var defaultRegionId = Model.DefaultRegionId;
 }
 
 <div class="container" style="padding-top:28px;">
@@ -22,7 +23,9 @@
             <div id="act-region-chips" class="region-chips">
                 @foreach (var region in Model.Regions)
                 {
-                    <button type="button" class="region-chip" data-region-id="@region.RegionId">@region.Name</button>
+                    <button type="button"
+                            class="region-chip @(region.RegionId == defaultRegionId ? "active" : string.Empty)"
+                            data-region-id="@region.RegionId">@region.Name</button>
                 }
             </div>
         </div>
@@ -437,6 +440,13 @@
     document.getElementById('act-search').addEventListener('input', applySearch);
     document.getElementById('act-export').addEventListener('click', exportCsv);
 
-    setState('prompt');
+    var defaultRegionChip = document.querySelector('#act-region-chips .region-chip.active')
+        || document.querySelector('#act-region-chips .region-chip');
+
+    if (defaultRegionChip) {
+        defaultRegionChip.click();
+    } else {
+        setState('prompt');
+    }
 })();
 </script>
