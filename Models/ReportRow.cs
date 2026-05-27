@@ -21,6 +21,7 @@ namespace VASReportingTool.Models
         public int ActivationAttempts { get; set; }
         public int FreeTrials { get; set; }
         public int ActivationCount { get; set; }
+        public int FreeToPaid { get; set; }
         public decimal ActivationRevenue { get; set; }
         public int RenewalCount { get; set; }
         public decimal RenewalRevenue { get; set; }

@@ -659,6 +659,7 @@
         var totalVisitors    = Number(row.TotalVisitors) || 0;
         var activationCount  = Number(row.ActivationCount) || 0;
         var freeTrials       = Number(row.FreeTrials) || 0;
+        var freeToPaid       = Number(row.FreeToPaid != null ? row.FreeToPaid : row.freeToPaid) || 0;
         var renewalRevenue   = Number(row.RenewalRevenue) || 0;
         var totalRevenue     = Number(row.TotalRevenue) || 0;
         var churn            = Number(row.Churn) || 0;
@@ -678,6 +679,7 @@
             ActivationAttempts: Number(row.ActivationAttempts) || 0,
             FreeTrials: freeTrials,
             ActivationCount: activationCount,
+            FreeToPaid: freeToPaid,
             TotalActivations: freeTrials + activationCount,
             ActivationRevenue: Number(row.ActivationRevenue) || 0,
             RenewalCount: Number(row.RenewalCount) || 0,
@@ -1183,6 +1185,7 @@
             ActivationAttempts: 0,
             FreeTrials: 0,
             ActivationCount: 0,
+            FreeToPaid: 0,
             TotalActivations: 0,
             ActivationRevenue: 0,
             RenewalCount: 0,
@@ -1255,6 +1258,7 @@
         target.ActivationAttempts += row.ActivationAttempts;
         target.FreeTrials += row.FreeTrials;
         target.ActivationCount += row.ActivationCount;
+        target.FreeToPaid += row.FreeToPaid || 0;
         target.TotalActivations += row.FreeTrials + row.ActivationCount;
         target.ActivationRevenue += row.ActivationRevenue;
         target.RenewalCount += row.RenewalCount;
@@ -2928,6 +2932,7 @@
             { key: "ActivationAttempts", label: "Attempts", format: "number" },
             { key: "FreeTrials", label: "Free Trials", format: "number" },
             { key: "ActivationCount", label: "Activations", format: "number" },
+            { key: "FreeToPaid", label: "FREE TO PAID", format: "number" },
             { key: "TotalActivations", label: "Total Activations", format: "number" },
             { key: "ActivationRevenue", label: "Activation Revenue", format: "currency" },
             { key: "RenewalCount", label: "Renewals", format: "number" },
@@ -3066,6 +3071,7 @@
             { key: "ActivationRevenue", label: "Activation Revenue", format: "currency" },
             { key: "RenewalRevenue", label: "Renewal Revenue", format: "currency" },
             { key: "ActivationCount", label: "Activations", format: "number" },
+            { key: "FreeToPaid", label: "FREE TO PAID", format: "number" },
             { key: "TotalActivations", label: "Total Activations", format: "number" },
             { key: "RenewalCount", label: "Renewals", format: "number" },
             { key: "TotalVisitors", label: "Visitors", format: "number" },
