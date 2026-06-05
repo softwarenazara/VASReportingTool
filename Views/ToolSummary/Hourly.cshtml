@@ -89,12 +89,6 @@
                     <option value="">All services</option>
                 </select>
             </div>
-            <div>
-                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;">Hour</label>
-                <select id="hc-hour" class="filter-select" style="min-width:140px;" disabled>
-                    <option value="">Latest available hour</option>
-                </select>
-            </div>
             <button id="hc-load" class="primary-btn" disabled style="height:36px;">Load Comparison</button>
         </div>
     </div>
@@ -141,7 +135,6 @@
 <script>
 (function () {
     var selectedRegionId = null;
-    var selectedHour = '';
     var allData = [];
     var activeTab = 'revenue';
 
@@ -191,14 +184,12 @@
         resetSel('hc-country', 'Loading...');
         resetSel('hc-operator', 'All operators');
         resetSel('hc-service', 'All services');
-        resetHourSel();
         loadCountries();
     });
 
     document.getElementById('hc-country').addEventListener('change', function () {
         resetSel('hc-operator', 'All operators');
         resetSel('hc-service', 'All services');
-        resetHourSel();
 
         var country = this.value;
         if (!country || !selectedRegionId) {
@@ -216,7 +207,6 @@
 
     document.getElementById('hc-operator').addEventListener('change', function () {
         resetSel('hc-service', 'All services');
-        resetHourSel();
 
         var country = document.getElementById('hc-country').value;
         var operator = this.value;
@@ -231,17 +221,6 @@
             .then(function (r) { return r.json(); })
             .then(function (data) { populateSel('hc-service', Array.isArray(data) ? data : [], 'All services'); })
             .catch(function () { populateSel('hc-service', [], 'All services'); });
-    });
-
-    document.getElementById('hc-service').addEventListener('change', function () {
-        resetHourSel();
-    });
-
-    document.getElementById('hc-hour').addEventListener('change', function () {
-        selectedHour = this.value;
-        if (allData.length) {
-            renderTable();
-        }
     });
 
     document.getElementById('hc-load').addEventListener('click', function () {
@@ -276,17 +255,14 @@
                 }
 
                 allData = data.Rows || [];
-                populateHourSel(data.AvailableHours || [], data.CurrentHour);
 
                 if (data.Date) {
                     var datebandParts = [
                         'Today: ' + data.Date,
                         'Yesterday: ' + data.Yesterday,
-                        '7-Day avg from: ' + data.Days7From
+                        '7-Day avg from: ' + data.Days7From,
+                        'Latest hour: country specific'
                     ];
-                    if (typeof data.CurrentHour === 'number' && data.CurrentHour >= 0) {
-                        datebandParts.push('Latest hour: ' + hourLabel(data.CurrentHour));
-                    }
                     document.getElementById('hc-dateband').textContent = datebandParts.join(' | ');
                 }
 
@@ -400,13 +376,6 @@
         el.disabled = true;
     }
 
-    function resetHourSel() {
-        var el = document.getElementById('hc-hour');
-        selectedHour = '';
-        el.innerHTML = '<option value="">Latest available hour</option>';
-        el.disabled = true;
-    }
-
     function populateSel(id, items, placeholder) {
         var sel = document.getElementById(id);
         sel.innerHTML = '<option value="">' + placeholder + '</option>';
@@ -419,50 +388,13 @@
         sel.disabled = false;
     }
 
-    function populateHourSel(hours, currentHour) {
-        var sel = document.getElementById('hc-hour');
-        var normalizedHours = (Array.isArray(hours) ? hours : [])
-            .map(function (h) { return Number(h); })
-            .filter(function (h) { return !isNaN(h) && h >= 0; })
-            .sort(function (a, b) { return a - b; });
-
-        sel.innerHTML = '<option value="">All hours</option>';
-        normalizedHours.forEach(function (hour) {
-            var option = document.createElement('option');
-            option.value = String(hour);
-            var isLatest = hour === Number(currentHour);
-            option.textContent = hourLabel(hour) + (isLatest ? ' (Latest)' : '');
-            if (isLatest) {
-                option.style.fontWeight = 'bold';
-                option.style.color = '#2563eb';
-                option.style.background = '#eff6ff';
-            }
-            sel.appendChild(option);
-        });
-
-        if (!normalizedHours.length) {
-            sel.disabled = true;
-            selectedHour = '';
-            return;
-        }
-
-        sel.disabled = false;
-        var defaultHour = normalizedHours.indexOf(Number(currentHour)) >= 0
-            ? Number(currentHour)
-            : normalizedHours[normalizedHours.length - 1];
-
-        selectedHour = String(defaultHour);
-        sel.value = selectedHour;
-    }
-
     function renderTable() {
         var tab = TABS[activeTab];
         if (!tab) { return; }
 
         var visibleData = getVisibleData();
         if (!visibleData.length) {
-            var upTo = selectedHour === '' ? '' : ' up to ' + hourLabel(Number(selectedHour));
-            document.getElementById('hc-empty').textContent = 'No hourly data found' + upTo + ' for the selected filters.';
+            document.getElementById('hc-empty').textContent = 'No hourly data found for the selected filters.';
             document.getElementById('hc-count').textContent = '0 rows';
             setState('empty');
             return;
@@ -547,8 +479,8 @@
             // Toggle arrow button injected next to cumulative label
             var toggleBtn = ' <button class="hc-toggle" data-group="' + groupId + '" title="Show / hide hourly breakdown">&#9660;</button>';
 
-            // Label reflects selected hour: "Till 9:00" for a past hour, "TOTAL" for all hours
-            var cumulLabel = selectedHour !== '' ? 'Till ' + hourLabel(Number(selectedHour)) : 'TOTAL';
+            var latestHour = getGroupLatestHour(gRows);
+            var cumulLabel = latestHour >= 0 ? 'Till ' + hourLabel(latestHour) : 'TOTAL';
 
             // Render cumulative TOTAL row (highlighted blue) with toggle arrow
             var cCells = tab.cells(cumul);
@@ -581,9 +513,7 @@
         });
 
         document.getElementById('hc-tbody').innerHTML = html;
-        var rangeLabel = selectedHour !== ''
-            ? ' | Cumulative 0:00 - ' + hourLabel(Number(selectedHour))
-            : '';
+        var rangeLabel = ' | Cumulative to each country latest hour';
         var countLabel = searchTerms.length
             ? totalGroups + ' of ' + Object.keys(groupMap).length + ' groups match'
             : idx + ' row' + (idx !== 1 ? 's' : '');
@@ -614,13 +544,21 @@
             return [];
         }
 
-        if (selectedHour === '') {
-            return allData;
-        }
+        return allData.filter(function (row) {
+            var latestHour = Number(row.LatestHour);
+            return isNaN(latestHour) || latestHour < 0 || Number(row.Hour) <= latestHour;
+        });
+    }
 
-        var selectedHourNumber = Number(selectedHour);
-        // Cumulative: show all hours up to and including the selected hour
-        return allData.filter(function (row) { return Number(row.Hour) <= selectedHourNumber; });
+    function getGroupLatestHour(rows) {
+        var latest = -1;
+        (rows || []).forEach(function (row) {
+            var h = Number(row.LatestHour);
+            if (!isNaN(h) && h > latest) {
+                latest = h;
+            }
+        });
+        return latest;
     }
 
     function setState(state, msg) {

@@ -190,6 +190,21 @@ namespace VASReportingTool.Controllers
                     .OrderBy(h => h)
                     .ToList();
 
+                var latestTodayHourByCountry = todayRows
+                    .GroupBy(r => (r.Country ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.Select(r => r.Hour != 0 ? r.Hour : r.ReportDate.Hour).DefaultIfEmpty(-1).Max(),
+                        StringComparer.OrdinalIgnoreCase);
+
+                var latestAvailableHourByCountry = allKeys
+                    .Select(k => k.Split('|'))
+                    .GroupBy(parts => parts[0], StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.Select(parts => int.Parse(parts[3])).DefaultIfEmpty(-1).Max(),
+                        StringComparer.OrdinalIgnoreCase);
+
                 var currentHour = todayRows
                     .Select(r => r.Hour)
                     .Distinct()
@@ -210,12 +225,19 @@ namespace VASReportingTool.Controllers
                     last7Map.TryGetValue(k, out s);
 
                     var parts = k.Split('|');
+                    int latestHour;
+                    if (!latestTodayHourByCountry.TryGetValue(parts[0], out latestHour) || latestHour < 0)
+                    {
+                        latestAvailableHourByCountry.TryGetValue(parts[0], out latestHour);
+                    }
+
                     rows.Add(new
                     {
                         Country  = parts[0],
                         Operator = parts[1],
                         Service  = parts[2],
                         Hour     = int.Parse(parts[3]),
+                        LatestHour = latestHour,
                         // Revenue (Total)
                         TodayRev  = t != null ? (long)Math.Round(t.Revenue)   : 0L,
                         YestRev   = y != null ? (long)Math.Round(y.Revenue)   : 0L,

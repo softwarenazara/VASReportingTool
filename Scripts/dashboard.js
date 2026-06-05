@@ -90,10 +90,19 @@
         Kuwait: "KWD", Bahrain: "BHD", Qatar: "QAR", Oman: "OMR",
         Lebanon: "LBP", Libya: "LYD", Sudan: "SDG", Yemen: "YER",
         Palestine: "ILS", Syria: "SYP",
-        India: "INR", Pakistan: "PKR", Bangladesh: "BDT", "Sri Lanka": "LKR",
+        India: "INR", Pakistan: "PKR", Bangladesh: "BDT", "Sri Lanka": "LKR", SriLanka: "LKR",
         Nepal: "NPR", Myanmar: "MMK", Thailand: "THB", Vietnam: "VND",
         Indonesia: "IDR", Philippines: "PHP", Malaysia: "MYR",
-        Cambodia: "KHR", Laos: "LAK"
+        Cambodia: "KHR", Laos: "LAK",
+        DialogueMedia: "LKR", Maldives: "MVR", PAYTM: "LKR", Poland: "PLN"
+    };
+
+    var fixedAedLocalRates = {
+        dialoguemedia: { currency: "LKR", rate: 91.97 },
+        maldives: { currency: "MVR", rate: 4.21 },
+        paytm: { currency: "LKR", rate: 91.97 },
+        poland: { currency: "PLN", rate: 0.99 },
+        srilanka: { currency: "LKR", rate: 91.97 }
     };
 
     var currencySymbols = {
@@ -199,6 +208,26 @@
         }
 
         return "USD";
+    }
+
+    function getCurrencyLookupKey(value) {
+        return normalizeText(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+    }
+
+    function getFixedAedLocalRate(country) {
+        var key = getCurrencyLookupKey(country);
+        if (fixedAedLocalRates[key]) {
+            return fixedAedLocalRates[key];
+        }
+
+        var keys = Object.keys(fixedAedLocalRates);
+        for (var index = 0; index < keys.length; index++) {
+            if (key.indexOf(keys[index]) >= 0 || keys[index].indexOf(key) >= 0) {
+                return fixedAedLocalRates[keys[index]];
+            }
+        }
+
+        return null;
     }
 
     function getStorage() {
@@ -311,17 +340,22 @@
         return state.ratesPromise;
     }
 
-    function convertRevenueValue(localAmount, countryCode, targetCurrency) {
+    function getExchangeRateForCountry(country, countryCode, targetCurrency) {
+        var fixedRate = getFixedAedLocalRate(country);
+        if (targetCurrency === "AED" && fixedRate && countryCode === fixedRate.currency) {
+            return fixedRate.rate;
+        }
+
+        var rates = state.exchangeRates[targetCurrency];
+        return rates ? rates[countryCode] : null;
+    }
+
+    function convertRevenueValue(localAmount, countryCode, targetCurrency, country) {
         if (!localAmount || targetCurrency === "local" || !state.ratesLoaded) {
             return localAmount;
         }
 
-        var rates = state.exchangeRates[targetCurrency];
-        if (!rates) {
-            return localAmount;
-        }
-
-        var rate = rates[countryCode];
+        var rate = getExchangeRateForCountry(country, countryCode, targetCurrency);
         if (!rate) {
             return localAmount;
         }
@@ -384,7 +418,7 @@
 
             var countryCode = getCurrencyForCountry(row.Country);
             revenueColumnKeys.forEach(function (columnKey) {
-                converted[columnKey] = convertRevenueValue(Number(row[columnKey]) || 0, countryCode, state.activeCurrency);
+                converted[columnKey] = convertRevenueValue(Number(row[columnKey]) || 0, countryCode, state.activeCurrency, row.Country);
             });
 
             return converted;
@@ -431,7 +465,7 @@
 
         var chips = countries.map(function (country) {
             var currencyCode = getCurrencyForCountry(country);
-            var rate = rates[currencyCode];
+            var rate = getExchangeRateForCountry(country, currencyCode, state.activeCurrency);
             if (!rate) {
                 return "";
             }

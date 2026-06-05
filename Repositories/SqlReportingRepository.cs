@@ -937,6 +937,11 @@ AND [Activation Date] < DATEADD(day, 1, @ToDate)
                     .Where(item => string.Equals(item.RegionName, regionUrl.RegionName, StringComparison.OrdinalIgnoreCase))
                     .Where(item => string.IsNullOrWhiteSpace(countryFilter) || MatchesTextFilter(item.Country, countryFilter)))
                 {
+                    if (ShouldUseMainBackendForCountry(regionUrl.RegionName, countryOverride.Country))
+                    {
+                        continue;
+                    }
+
                     if (targets.Any(existing =>
                         existing.RegionId == regionUrl.RegionId &&
                         string.Equals(existing.Url, countryOverride.Url, StringComparison.OrdinalIgnoreCase) &&
@@ -956,6 +961,12 @@ AND [Activation Date] < DATEADD(day, 1, @ToDate)
             }
 
             return targets;
+        }
+
+        private static bool ShouldUseMainBackendForCountry(string regionName, string country)
+        {
+            return string.Equals(regionName, "APAC", StringComparison.OrdinalIgnoreCase) &&
+                   MatchesTextFilter(country, "Malaysia");
         }
 
         private ReportFetchResult FetchReportRows(IList<RegionApiTarget> regionUrls, DashboardRequest request, bool requireAvailability)
