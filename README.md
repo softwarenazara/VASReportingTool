@@ -1,5 +1,7 @@
 # VAS Reporting Tool
 
+Private workspace repo for Samadhan's Mobile VAS portal development under Nazara-VAS.
+
 ASP.NET MVC 4 / .NET Framework 4.0 secure reporting portal with:
 
 - username/password plus email OTP login
