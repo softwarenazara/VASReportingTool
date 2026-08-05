@@ -83,31 +83,37 @@ namespace VASReportingTool.Controllers{
                     return View(model);
                 }
 
-                if (string.IsNullOrWhiteSpace(user.Email))
-                {
-                    model.ErrorMessage = "User email is not configured. Please contact admin.";
-                    return View(model);
-                }
-
                 var ipAddress = GetClientIpAddress();
                 var location = _ipLocationService.Resolve(ipAddress);
                 var sessionKey = Guid.NewGuid().ToString("N");
-                var sendResult = SendOtpChallenge(user, sessionKey, ipAddress, location.ToDisplayText(), true);
-                if (!sendResult.Success)
+
+                if (IsOtpLoginEnabled())
                 {
-                    model.ErrorMessage = sendResult.Message;
-                    return View(model);
+                    var sendResult = SendOtpChallenge(user, sessionKey, ipAddress, location.ToDisplayText(), true);
+                    if (!sendResult.Success)
+                    {
+                        model.ErrorMessage = sendResult.Message;
+                        return View(model);
+                    }
+
+                    Session["PendingUserId"] = user.UserId;
+                    Session["PendingUsername"] = user.Username;
+                    Session["PendingRole"] = user.Role;
+                    Session["PendingSessionKey"] = sessionKey;
+                    Session["PendingLocation"] = location.ToDisplayText();
+                    Session["PendingIpAddress"] = ipAddress;
+                    Session["PendingEmailHint"] = sendResult.MaskedEmail;
+                    _repository.LogUserActivity(BuildActivity(user, sessionKey, "PasswordValidated", "Primary credentials validated; OTP login flow enabled.", ipAddress, location.ToDisplayText()));
+                    return RedirectToAction("VerifyOtp", new { username = user.Username, info = sendResult.Message, v = DateTime.UtcNow.Ticks });
                 }
 
-                Session["PendingUserId"] = user.UserId;
-                Session["PendingUsername"] = user.Username;
-                Session["PendingRole"] = user.Role;
-                Session["PendingSessionKey"] = sessionKey;
-                Session["PendingLocation"] = location.ToDisplayText();
-                Session["PendingIpAddress"] = ipAddress;
-                Session["PendingEmailHint"] = sendResult.MaskedEmail;
-                _repository.LogUserActivity(BuildActivity(user, sessionKey, "PasswordValidated", "Primary credentials validated.", ipAddress, location.ToDisplayText()));
-                return RedirectToAction("VerifyOtp", new { username = user.Username, info = sendResult.Message, v = DateTime.UtcNow.Ticks });
+                var authExpiresOnLocal = GetTodaySessionExpiryLocal();
+                _authenticationService.SignIn(Response, user, authExpiresOnLocal, sessionKey, ipAddress, location.ToDisplayText());
+                ApplyAuthenticatedSession(user, user.Role, sessionKey, ipAddress, location.ToDisplayText(), authExpiresOnLocal);
+                ClearPendingSession();
+                _repository.LogUserActivity(BuildActivity(user, sessionKey, "PasswordValidated", "Primary credentials validated; OTP login temporarily disabled.", ipAddress, location.ToDisplayText()));
+                _repository.LogUserActivity(BuildActivity(user, sessionKey, "LoginSuccessful", "OTP disabled at login; direct password login used.", ipAddress, location.ToDisplayText()));
+                return RedirectToAction("Index", "Dashboard");
             }
             catch (Exception ex)
             {
@@ -333,21 +339,43 @@ namespace VASReportingTool.Controllers{
             var ipAddress = GetClientIpAddress();
             var location = _ipLocationService.Resolve(ipAddress);
             var sessionKey = Guid.NewGuid().ToString("N");
-            var sendResult = SendOtpChallenge(user, sessionKey, ipAddress, location.ToDisplayText(), true);
-            if (!sendResult.Success)
+            if (IsOtpLoginEnabled())
             {
-                Response.StatusCode = 429;
-                return Json(new { success = false, message = sendResult.Message });
+                var sendResult = SendOtpChallenge(user, sessionKey, ipAddress, location.ToDisplayText(), true);
+                if (!sendResult.Success)
+                {
+                    Response.StatusCode = 429;
+                    return Json(new { success = false, message = sendResult.Message });
+                }
+
+                Session["PendingUserId"] = user.UserId;
+                Session["PendingUsername"] = user.Username;
+                Session["PendingRole"] = user.Role;
+                Session["PendingSessionKey"] = sessionKey;
+                Session["PendingLocation"] = location.ToDisplayText();
+                Session["PendingIpAddress"] = ipAddress;
+                Session["PendingEmailHint"] = sendResult.MaskedEmail;
+                return Json(new { success = true, requiresOtp = true, username = user.Username, maskedEmail = sendResult.MaskedEmail });
             }
 
-            Session["PendingUserId"] = user.UserId;
-            Session["PendingUsername"] = user.Username;
-            Session["PendingRole"] = user.Role;
-            Session["PendingSessionKey"] = sessionKey;
-            Session["PendingLocation"] = location.ToDisplayText();
-            Session["PendingIpAddress"] = ipAddress;
-            Session["PendingEmailHint"] = sendResult.MaskedEmail;
-            return Json(new { success = true, requiresOtp = true, username = user.Username, maskedEmail = sendResult.MaskedEmail });
+            var authExpiresOnLocal = GetTodaySessionExpiryLocal();
+            _authenticationService.SignIn(Response, user, authExpiresOnLocal, sessionKey, ipAddress, location.ToDisplayText());
+            ApplyAuthenticatedSession(user, user.Role, sessionKey, ipAddress, location.ToDisplayText(), authExpiresOnLocal);
+            ClearPendingSession();
+            _repository.LogUserActivity(BuildActivity(user, sessionKey, "PasswordValidated", "Primary credentials validated; OTP login temporarily disabled.", ipAddress, location.ToDisplayText()));
+            _repository.LogUserActivity(BuildActivity(user, sessionKey, "LoginSuccessful", "OTP disabled at login; direct password login used.", ipAddress, location.ToDisplayText()));
+            return Json(new { success = true, requiresOtp = false, username = user.Username });
+        }
+
+        private bool IsOtpLoginEnabled()
+        {
+            var value = ConfigurationManager.AppSettings["OtpLoginEnabled"];
+            if (bool.TryParse(value, out var enabled))
+            {
+                return enabled;
+            }
+
+            return false;
         }
 
         private OtpSendResult SendOtpChallenge(User user, string sessionKey, string ipAddress, string locationText, bool expireExisting)

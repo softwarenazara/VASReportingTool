@@ -870,8 +870,44 @@
         return chartColors[accent] || chartColors.blue;
     }
 
+    var loaderProgressTimer = null;
+    var loaderProgressValue = 0;
+
+    function setLoaderPercent(value) {
+        var percentEl = byId("dashboardLoaderPercent");
+        if (percentEl) {
+            percentEl.textContent = Math.round(value) + "%";
+        }
+    }
+
+    function stopLoaderProgress() {
+        if (loaderProgressTimer) {
+            clearInterval(loaderProgressTimer);
+            loaderProgressTimer = null;
+        }
+    }
+
     function setLoading(isLoading) {
         byId("dashboardLoader").classList.toggle("hidden", !isLoading);
+
+        stopLoaderProgress();
+
+        if (isLoading) {
+            loaderProgressValue = 0;
+            setLoaderPercent(loaderProgressValue);
+            loaderProgressTimer = setInterval(function () {
+                // Ease toward 95% while the request is in flight; the final
+                // jump to 100% happens right before the loader is hidden.
+                var remaining = 95 - loaderProgressValue;
+                loaderProgressValue += Math.max(remaining * 0.035, 0.15);
+                if (loaderProgressValue >= 95) {
+                    loaderProgressValue = 95;
+                }
+                setLoaderPercent(loaderProgressValue);
+            }, 200);
+        } else {
+            setLoaderPercent(100);
+        }
     }
 
     function setError(message) {
@@ -1381,38 +1417,6 @@
         return summary;
     }
 
-    function buildWeekdayRows(rows) {
-        var weekdays = [
-            { key: 0, label: "Mon" },
-            { key: 1, label: "Tue" },
-            { key: 2, label: "Wed" },
-            { key: 3, label: "Thu" },
-            { key: 4, label: "Fri" },
-            { key: 5, label: "Sat" },
-            { key: 6, label: "Sun" }
-        ];
-        var grouped = {};
-
-        weekdays.forEach(function (weekday) {
-            grouped[weekday.key] = createAggregateRow(weekday.label, weekday.label, weekday.key);
-        });
-
-        rows.forEach(function (row) {
-            if (!row.ReportDate) {
-                return;
-            }
-
-            var dayIndex = row.ReportDate.getDay() === 0 ? 6 : row.ReportDate.getDay() - 1;
-            accumulateMetrics(grouped[dayIndex], row);
-        });
-
-        return weekdays.map(function (weekday) {
-            var entry = grouped[weekday.key];
-            applyDerivedMetrics(entry);
-            return entry;
-        });
-    }
-
     function buildContributionRows(rows, dimensionKey, emptyLabel) {
         var dimensionRows = buildDimensionRows(rows, dimensionKey, emptyLabel, "TotalRevenue");
         if (dimensionRows.length <= 1) {
@@ -1665,148 +1669,6 @@
             showLegend: true,
             valueFormat: "number"
         }];
-    }
-
-    function buildServiceDailyBreakdownCharts(rawRows) {
-        // Rank services by activation count, take top 6
-        var serviceRows = buildDimensionRows(rawRows, "ServiceName", "Unspecified Service", "ActivationCount").slice(0, 6);
-        if (serviceRows.length <= 1) {
-            return [];
-        }
-
-        var selectedLabels = serviceRows.map(function (row) { return row.DisplayLabel; });
-
-        // --- Group raw rows by date bucket, using service name as direct key (same
-        //     pattern as buildDimensionTrendChart so there is no key-prefix mismatch) ---
-        var actGrouped = {};
-        var revGrouped = {};
-
-        rawRows.forEach(function (row) {
-            var svc = normalizeText(row.ServiceName) || "Unspecified Service";
-            if (selectedLabels.indexOf(svc) < 0) {
-                return;
-            }
-
-            var bucket = getPeriodBucket(row.ReportDate);
-            if (!bucket) {
-                return;
-            }
-
-            if (!actGrouped[bucket.key]) {
-                actGrouped[bucket.key] = { DisplayLabel: bucket.label, ShortLabel: bucket.shortLabel, SortValue: bucket.sortValue };
-                revGrouped[bucket.key] = { DisplayLabel: bucket.label, ShortLabel: bucket.shortLabel, SortValue: bucket.sortValue };
-            }
-
-            actGrouped[bucket.key][svc] = (Number(actGrouped[bucket.key][svc]) || 0) + (Number(row.ActivationCount) || 0);
-            revGrouped[bucket.key][svc] = (Number(revGrouped[bucket.key][svc]) || 0) + (Number(row.TotalRevenue) || 0);
-        });
-
-        var actBuckets = Object.keys(actGrouped).map(function (k) { return actGrouped[k]; }).sort(function (a, b) { return a.SortValue - b.SortValue; });
-        var revBuckets = Object.keys(revGrouped).map(function (k) { return revGrouped[k]; }).sort(function (a, b) { return a.SortValue - b.SortValue; });
-
-        if (!actBuckets.length) {
-            return [];
-        }
-
-        var charts = [];
-
-        // Only render multi-bucket trend charts when there is more than one date bucket
-        if (actBuckets.length > 1) {
-            charts.push({
-                id: "serviceDailyActivations",
-                title: "Service-wise Daily Activations",
-                subtitle: "Stacked daily activation count broken down by service across the selected range",
-                badge: "Services",
-                badgeAccent: "emerald",
-                tab: "services",
-                type: "bar",
-                row: 4,
-                aspectRatio: 2.4,
-                stacked: true,
-                customData: {
-                    labels: actBuckets.map(function (b) { return b.ShortLabel; }),
-                    datasets: selectedLabels.map(function (svc, i) {
-                        var color = getPaletteColor(i);
-                        return {
-                            label: svc,
-                            data: actBuckets.map(function (b) { return Number(b[svc]) || 0; }),
-                            backgroundColor: color.stroke,
-                            borderColor: color.stroke,
-                            borderWidth: 0
-                        };
-                    })
-                },
-                showLegend: true,
-                valueFormat: "number"
-            });
-
-            charts.push({
-                id: "serviceDailyRevenue",
-                title: "Service-wise Daily Revenue",
-                subtitle: "Stacked daily revenue broken down by service across the selected range",
-                badge: "Revenue",
-                badgeAccent: "blue",
-                tab: "services",
-                type: "bar",
-                row: 4,
-                aspectRatio: 2.4,
-                stacked: true,
-                customData: {
-                    labels: revBuckets.map(function (b) { return b.ShortLabel; }),
-                    datasets: selectedLabels.map(function (svc, i) {
-                        var color = getPaletteColor(i);
-                        return {
-                            label: svc,
-                            data: revBuckets.map(function (b) { return Number(b[svc]) || 0; }),
-                            backgroundColor: color.stroke,
-                            borderColor: color.stroke,
-                            borderWidth: 0
-                        };
-                    })
-                },
-                showLegend: true,
-                valueFormat: "currency"
-            });
-        } else {
-            // Snapshot view (single bucket) - show a horizontal bar per service
-            charts.push({
-                id: "serviceDailyActivations",
-                title: "Service-wise Activations",
-                subtitle: "Activation count split by service for the selected day",
-                badge: "Services",
-                badgeAccent: "emerald",
-                tab: "services",
-                type: "bar",
-                row: 4,
-                aspectRatio: 2.4,
-                indexAxis: "y",
-                labels: selectedLabels,
-                rows: serviceRows,
-                series: [
-                    { label: "Activations", columnKey: "ActivationCount", type: "bar", accent: "emerald" }
-                ]
-            });
-
-            charts.push({
-                id: "serviceDailyRevenue",
-                title: "Service-wise Revenue",
-                subtitle: "Revenue split by service for the selected day",
-                badge: "Revenue",
-                badgeAccent: "blue",
-                tab: "services",
-                type: "bar",
-                row: 4,
-                aspectRatio: 2.4,
-                indexAxis: "y",
-                labels: selectedLabels,
-                rows: serviceRows,
-                series: [
-                    { label: "Total Revenue", columnKey: "TotalRevenue", type: "bar", accent: "blue" }
-                ]
-            });
-        }
-
-        return charts;
     }
 
     function buildServiceBreakdownCharts(rows) {
@@ -2213,146 +2075,15 @@
             }).join("") + "</div>";
     }
 
-    function buildDailyChurnReasonRows(rows) {
-        var grouped = {};
-
-        rows.forEach(function (row) {
-            if (!row || !row.ReportDate) {
-                return;
-            }
-
-            var key = row.DateKey || toDateKey(row.ReportDate);
-            if (!grouped[key]) {
-                grouped[key] = {
-                    DisplayLabel: formatDisplayDate(row.ReportDate, true),
-                    ShortLabel: formatDayMonth(row.ReportDate),
-                    SortValue: row.ReportDate.getTime(),
-                    Churn: 0,
-                    UserChurn: 0,
-                    SystemChurn: 0,
-                    Deactivation: 0
-                };
-            }
-
-            grouped[key].Churn += Number(row.Churn) || 0;
-            grouped[key].UserChurn += Number(row.UserChurn) || 0;
-            grouped[key].SystemChurn += Number(row.SystemChurn) || 0;
-            grouped[key].Deactivation += Number(row.Deactivation) || 0;
-        });
-
-        return Object.keys(grouped).map(function (key) {
-            return grouped[key];
-        }).sort(function (left, right) {
-            return left.SortValue - right.SortValue;
-        });
-    }
-
-    function buildSourceChurnFallbackChart(rows) {
-        var sourceRows = buildDimensionRows(rows, "ActivationSource", "Unspecified Source", "Churn").slice(0, 8);
-        if (!sourceRows.length) {
-            return null;
-        }
-
-        var isCompactSnapshot = sourceRows.length <= 3;
-
-        return {
-            id: "sourceChurn",
-            title: "Source-wise Churn Count",
-            subtitle: "Churn volume by activation source for the active date range",
-            badge: "Churn",
-            badgeAccent: "rose",
-            tab: "churn",
-            type: "bar",
-            row: 3,
-            aspectRatio: isCompactSnapshot ? 2.8 : 2.8,
-            heightPx: isCompactSnapshot ? 160 : undefined,
-            indexAxis: "y",
-            cardClass: "focus-card ranking-card" + (isCompactSnapshot ? " snapshot-card compact" : ""),
-            labels: sourceRows.map(function (row) { return row.ShortLabel; }),
-            rows: sourceRows,
-            series: [
-                { label: "Churn", columnKey: "Churn", type: "bar", accent: "rose", barPercentage: 0.56, categoryPercentage: 0.62 }
-            ]
-        };
-    }
-
-    function buildDailyChurnReasonChart(rows) {
-        var dailyRows = buildDailyChurnReasonRows(rows);
-        var hasReasonData = dailyRows.some(function (row) {
-            return row.UserChurn > 0 || row.SystemChurn > 0 || row.Deactivation > 0;
-        });
-
-        if (!dailyRows.length || !hasReasonData) {
-            return null;
-        }
-
-        var isSnapshotView = dailyRows.length <= 1;
-
-        return {
-            id: "dailyChurnStacked",
-            title: isSnapshotView ? "Churn Snapshot" : "Daily Churn - Stacked",
-            subtitle: isSnapshotView
-                ? "User churn, system churn, and deactivation for the selected day"
-                : "User churn, system churn, and deactivation by selected day",
-            badge: "Churn",
-            badgeAccent: "rose",
-            tab: "churn",
-            type: "bar",
-            row: 3,
-            aspectRatio: isSnapshotView ? 2.8 : 2.8,
-            heightPx: isSnapshotView ? 160 : undefined,
-            stacked: true,
-            cardClass: "focus-card" + (isSnapshotView ? " snapshot-card compact" : ""),
-            customData: {
-                labels: dailyRows.map(function (row) { return row.ShortLabel; }),
-                datasets: [
-                    {
-                        label: "System Churn",
-                        data: dailyRows.map(function (row) { return row.SystemChurn; }),
-                        backgroundColor: chartColors.cyan.stroke,
-                        borderColor: chartColors.cyan.stroke,
-                        borderWidth: 0,
-                        stack: "churn",
-                        barPercentage: 0.56,
-                        categoryPercentage: 0.62
-                    },
-                    {
-                        label: "User Churn",
-                        data: dailyRows.map(function (row) { return row.UserChurn; }),
-                        backgroundColor: chartColors.amber.stroke,
-                        borderColor: chartColors.amber.stroke,
-                        borderWidth: 0,
-                        stack: "churn",
-                        barPercentage: 0.56,
-                        categoryPercentage: 0.62
-                    },
-                    {
-                        label: "Deactivation",
-                        data: dailyRows.map(function (row) { return row.Deactivation; }),
-                        backgroundColor: chartColors.violet.stroke,
-                        borderColor: chartColors.violet.stroke,
-                        borderWidth: 0,
-                        stack: "churn",
-                        barPercentage: 0.56,
-                        categoryPercentage: 0.62
-                    }
-                ]
-            },
-            showLegend: true,
-            valueFormat: "number"
-        };
-    }
-
     function buildChartDefinitions(periodRows, rawRows) {
-        var weekdayRows = buildWeekdayRows(rawRows);
         var isSnapshotView = periodRows.length <= 1;
         var definitions = [
             {
                 id: "revenue",
                 title: isSnapshotView ? "Revenue Snapshot" : "Revenue Trend",
                 subtitle: isSnapshotView
-                    ? "Activation, renewal, and total revenue for the selected day"
-                    : "Activation, renewal, and total revenue across the selected range",
+                    ? "Renewal and total revenue with activation, churn, and gross base volume for the selected day"
+                    : "Renewal and total revenue with activation, churn, and gross base volume across the selected range",
                 badge: "Revenue",
                 badgeAccent: "amber",
                 tab: "revenue",
@@ -2362,77 +2093,14 @@
                 heightPx: isSnapshotView ? 160 : undefined,
                 cardClass: isSnapshotView ? "snapshot-card compact" : "",
                 series: [
-                    { label: "Activation Revenue", columnKey: "ActivationRevenue", type: "bar", accent: "emerald" },
                     { label: "Renewal Revenue", columnKey: "RenewalRevenue", type: "bar", accent: "amber" },
-                    { label: "Total Revenue", columnKey: "TotalRevenue", type: "line", accent: "blue", fill: false }
+                    { label: "Total Revenue", columnKey: "TotalRevenue", type: "line", accent: "blue", fill: false },
+                    { label: "Activation Count", columnKey: "TotalActivations", type: "line", accent: "emerald" },
+                    { label: "Churn Count", columnKey: "Churn", type: "line", accent: "rose" },
+                    { label: "Gross Base Count", columnKey: "GrossBase", type: "line", accent: "violet", hidden: true }
                 ]
-            },
-            {
-                id: "funnel",
-                title: isSnapshotView ? "Traffic and Conversion Snapshot" : "Traffic and Conversion Funnel",
-                subtitle: isSnapshotView
-                    ? "Visitors, unique visitors, free trials, and activations for the selected day"
-                    : "Grouped traffic stages with activations overlaid for easier comparison",
-                badge: "Funnel",
-                badgeAccent: "cyan",
-                tab: "traffic",
-                type: "bar",
-                row: 2,
-                aspectRatio: isSnapshotView ? 2.8 : 2.8,
-                heightPx: isSnapshotView ? 160 : undefined,
-                cardClass: isSnapshotView ? "snapshot-card compact" : "",
-                series: [
-                    { label: "Visitors", columnKey: "TotalVisitors", type: "bar", accent: "blue", barPercentage: 0.56, categoryPercentage: 0.62 },
-                    { label: "Unique Visitors", columnKey: "UniqueVisitors", type: "bar", accent: "cyan", barPercentage: 0.56, categoryPercentage: 0.62 },
-                    { label: "Free Trials", columnKey: "FreeTrials", type: "bar", accent: "amber", barPercentage: 0.56, categoryPercentage: 0.62 },
-                    { label: "Activations", columnKey: "ActivationCount", type: "line", accent: "emerald", fill: false }
-                ]
-            },
-            buildDailyChurnReasonChart(rawRows) || buildSourceChurnFallbackChart(rawRows)
+            }
         ];
-
-        definitions = definitions.concat(buildServiceDailyBreakdownCharts(rawRows));
-
-        if (weekdayRows.length > 1) {
-            definitions.push(
-                {
-                    id: "weekdayRevenue",
-                    title: "Weekday Revenue Pattern",
-                    subtitle: "See which weekdays generate the strongest activation, renewal, and total revenue",
-                    badge: "Weekday",
-                    badgeAccent: "amber",
-                    tab: "weekday",
-                    type: "bar",
-                    row: 5,
-                    aspectRatio: 2.4,
-                    labels: weekdayRows.map(function (row) { return row.ShortLabel; }),
-                    rows: weekdayRows,
-                    series: [
-                        { label: "Activation Revenue", columnKey: "ActivationRevenue", type: "bar", accent: "emerald" },
-                        { label: "Renewal Revenue", columnKey: "RenewalRevenue", type: "bar", accent: "amber" },
-                        { label: "Total Revenue", columnKey: "TotalRevenue", type: "line", accent: "blue", fill: false }
-                    ]
-                },
-                {
-                    id: "weekdayVolume",
-                    title: "Weekday Subscriber Pattern",
-                    subtitle: "Track activations, renewals, and churn by day of week",
-                    badge: "Weekday",
-                    badgeAccent: "teal",
-                    tab: "weekday",
-                    type: "bar",
-                    row: 5,
-                    aspectRatio: 2.4,
-                    labels: weekdayRows.map(function (row) { return row.ShortLabel; }),
-                    rows: weekdayRows,
-                    series: [
-                        { label: "Activations", columnKey: "ActivationCount", type: "bar", accent: "emerald" },
-                        { label: "Renewals", columnKey: "RenewalCount", type: "bar", accent: "cyan" },
-                        { label: "Churn", columnKey: "Churn", type: "line", accent: "rose", fill: false }
-                    ]
-                }
-            );
-        }
 
         definitions = definitions.concat(buildContributionCharts(rawRows));
 
@@ -2620,7 +2288,8 @@
                         pointHoverRadius: series.type === "line" ? (hasBarSeries ? 0 : 4) : 0,
                         pointHitRadius: series.type === "line" ? (hasBarSeries ? 0 : 6) : 0,
                         borderWidth: series.type === "line" ? 2 : 0,
-                        order: series.type === "line" ? 1 : 2
+                        order: series.type === "line" ? 1 : 2,
+                        hidden: !!series.hidden
                     };
                 })
             };
@@ -2830,13 +2499,9 @@
         ChartLibrary.defaults.plugins.legend.labels.pointStyleWidth = 8;
         ChartLibrary.defaults.plugins.legend.labels.padding = 14;
 
-        var TAB_ORDER = ["revenue", "traffic", "churn", "services", "weekday", "contributions", "breakdown", "operator"];
+        var TAB_ORDER = ["revenue", "contributions", "breakdown", "operator"];
         var TAB_LABELS = {
             revenue: "Revenue",
-            traffic: "Traffic & Funnel",
-            churn: "Churn",
-            services: "Services",
-            weekday: "Weekday",
             contributions: "Contributions",
             breakdown: "Breakdown",
             operator: "Operator View"
@@ -2931,6 +2596,12 @@
             if (tab === activeTab) {
                 panelEls[tab].classList.add("active");
             }
+        });
+
+        // Resize charts in the initially active panel after non-active panels are hidden
+        panelEls[activeTab].querySelectorAll("canvas").forEach(function (canvas) {
+            var chart = state.charts[canvas.id];
+            if (chart) { chart.resize(); }
         });
 
         // Wire tab click events

@@ -12,6 +12,7 @@
     <add key="SmtpPassword" value="REPLACE_WITH_SMTP_PASSWORD" />
     <add key="SmtpEnableSsl" value="true" />
     <add key="OtpResendCooldownSeconds" value="60" />
+    <add key="OtpLoginEnabled" value="false" />
     <add key="GeoLocationApiUrl" value="https://api.ipinfo.io/lite/{0}?token={1}" />
     <add key="GeoLocationApiToken" value="REPLACE_WITH_FREE_IPINFO_TOKEN" />
     <add key="RegionActivationDatatypes" value="Africa|SUCCESSFUL ACT" />

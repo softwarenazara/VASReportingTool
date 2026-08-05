@@ -2,6 +2,13 @@
 @{
     Layout = null;
     ViewBag.Title = "Login";
+    var otpLoginEnabled = false;
+    var otpConfigValue = System.Configuration.ConfigurationManager.AppSettings["OtpLoginEnabled"];
+    bool parsed;
+    if (bool.TryParse(otpConfigValue, out parsed))
+    {
+        otpLoginEnabled = parsed;
+    }
 }
 <!DOCTYPE html>
 <html>
@@ -28,9 +35,9 @@
             </div>
         </section>
         <section class="auth-panel auth-panel-form">
-            <div class="auth-form-top">Step 1 of 2</div>
+            <div class="auth-form-top">@(otpLoginEnabled ? "Step 1 of 2" : "Secure sign in")</div>
             <h2>Sign in to continue</h2>
-            <p class="muted">Enter your username and password to receive a one-time code on your registered email address.</p>
+            <p class="muted">@(otpLoginEnabled ? "Enter your username and password to receive a one-time code on your registered email address." : "Enter your username and password to continue to the reporting workspace.")</p>
             @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
             {
                 <div class="error">@Model.ErrorMessage</div>
@@ -42,10 +49,10 @@
                 <button id="sendOtpBtn"
                         class="primary-btn auth-submit"
                         type="submit"
-                        data-default-text="Send OTP"
-                        data-loading-text="Sending OTP...">
+                        data-default-text="@(otpLoginEnabled ? "Send OTP" : "Sign In")"
+                        data-loading-text="@(otpLoginEnabled ? "Sending OTP..." : "Signing in...")">
                     <span class="auth-submit-spinner" aria-hidden="true"></span>
-                    <span class="auth-submit-text">Send OTP</span>
+                    <span class="auth-submit-text">@(otpLoginEnabled ? "Send OTP" : "Sign In")</span>
                 </button>
             </form>
             <div class="auth-links">
@@ -103,8 +110,8 @@
             var usernameInput = document.querySelector('[name="Username"]');
             var passwordInput = document.querySelector('[name="Password"]');
             var sendOtpText = sendOtpBtn.querySelector('.auth-submit-text');
-            var defaultText = sendOtpBtn.getAttribute('data-default-text') || 'Send OTP';
-            var loadingText = sendOtpBtn.getAttribute('data-loading-text') || 'Sending OTP...';
+            var defaultText = sendOtpBtn.getAttribute('data-default-text') || 'Sign In';
+            var loadingText = sendOtpBtn.getAttribute('data-loading-text') || 'Signing in...';
             var hasSubmitted = false;
 
             function setLoadingState(isLoading) {

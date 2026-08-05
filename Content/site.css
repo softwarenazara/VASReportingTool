@@ -968,6 +968,14 @@ body {
     font-size: 12px;
 }
 
+.loader-percent {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--blue);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
 .container {
     width: min(1280px, calc(100% - 32px));
     margin: 0 auto;
